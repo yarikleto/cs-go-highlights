@@ -3,3 +3,5 @@ output/
 *.log
 .DS_Store
 .cursor/
+demos/
+.npm-cache/
