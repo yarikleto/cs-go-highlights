@@ -41,15 +41,20 @@ const DEFAULT_CONFIG = {
 
 program
   .name('csgo-highlights')
-  .description('Detect highlights from CS:GO demo files')
-  .version('1.0.0')
+  .description('CLI tool for CS:GO demo highlights')
+  .version('1.0.0');
+
+// Analyze command - detect highlights from demo files
+program
+  .command('analyze')
+  .description('Analyze demo files and detect highlights')
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
   .option('--output <path>', 'Output folder for highlights.json', './output')
-  .parse(process.argv);
+  .action(analyzeCommand);
 
-const options = program.opts();
+program.parse(process.argv);
 
-async function main() {
+async function analyzeCommand(options) {
   const demosPath = path.resolve(options.demos);
   const outputPath = path.resolve(options.output);
   
@@ -188,7 +193,3 @@ async function main() {
   console.log('By type:', results.summary.byType);
 }
 
-main().catch(error => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
