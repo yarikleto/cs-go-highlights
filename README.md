@@ -180,6 +180,58 @@ node src/index.js merge --clips ./output/clips --cleanup
 
 The command produces a single merged video file (default: `./output/highlights_final.mp4`).
 
+### `compress`
+
+Compresses a video file to reduce file size using FFmpeg.
+
+```bash
+node src/index.js compress --input <path> [--power <level>] [--output <path>]
+```
+
+#### Prerequisites
+
+- **FFmpeg**: Must be installed and available in PATH. Download from [https://ffmpeg.org/](https://ffmpeg.org/)
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--input <path>` | Yes | - | Path to input video file |
+| `--power <level>` | No | `5` | Compression power 1-10 (1=light, 10=maximum) |
+| `--output <path>` | No | `{input}_compressed.mp4` | Output path for compressed video |
+
+#### Compression Power Scale
+
+| Power | CRF | Quality |
+|-------|-----|---------|
+| 1 | 18 | Minimal compression, highest quality |
+| 5 | 26 | Balanced compression and quality |
+| 10 | 36 | Maximum compression, lower quality |
+
+#### Examples
+
+Compress with default settings (power 5):
+
+```bash
+node src/index.js compress --input ./output/highlights_final.mp4
+```
+
+Compress with maximum compression:
+
+```bash
+node src/index.js compress --input ./output/highlights_final.mp4 --power 10
+```
+
+Compress with custom output path:
+
+```bash
+node src/index.js compress --input ./output/highlights_final.mp4 --power 7 --output ./my_compressed_video.mp4
+```
+
+#### Output
+
+The command produces a compressed video file and displays the size reduction percentage.
+
 ## Typical Workflow
 
 1. **Analyze** demos to detect highlights:
@@ -195,6 +247,11 @@ The command produces a single merged video file (default: `./output/highlights_f
 3. **Merge** clips into final video:
    ```bash
    node src/index.js merge --clips ./output/clips
+   ```
+
+4. **(Optional) Compress** the final video to reduce file size:
+   ```bash
+   node src/index.js compress --input ./output/highlights_final.mp4 --power 5
    ```
 
 ## Highlight Types

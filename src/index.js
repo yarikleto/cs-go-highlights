@@ -81,6 +81,15 @@ program
   .option('--cleanup', 'Delete individual clips after merging')
   .action(mergeCommand);
 
+// Compress command - compress a video to reduce file size
+program
+  .command('compress')
+  .description('Compress a video file to reduce file size')
+  .requiredOption('--input <path>', 'Path to input video file')
+  .option('--power <level>', 'Compression power 1-10 (1=light, 10=maximum)', '5')
+  .option('--output <path>', 'Output path for compressed video')
+  .action(compressCommand);
+
 program.parse(process.argv);
 
 async function analyzeCommand(options) {
@@ -389,5 +398,121 @@ async function mergeCommand(options) {
     console.error(`\nError during merging: ${err.message}`);
     process.exit(1);
   }
+}
+
+async function compressCommand(options) {
+  const inputPath = path.resolve(options.input);
+  const power = parseInt(options.power, 10);
+  
+  // Validate input file exists
+  if (!fs.existsSync(inputPath)) {
+    console.error(`Error: Input file not found: ${inputPath}`);
+    process.exit(1);
+  }
+  
+  // Validate power level
+  if (isNaN(power) || power < 1 || power > 10) {
+    console.error('Error: Compression power must be between 1 and 10');
+    process.exit(1);
+  }
+  
+  // Generate output path if not specified
+  let outputPath;
+  if (options.output) {
+    outputPath = path.resolve(options.output);
+  } else {
+    const inputDir = path.dirname(inputPath);
+    const inputName = path.basename(inputPath, path.extname(inputPath));
+    outputPath = path.join(inputDir, `${inputName}_compressed.mp4`);
+  }
+  
+  // Map power (1-10) to CRF value (18-36)
+  // Power 1 = CRF 18 (minimal compression, high quality)
+  // Power 10 = CRF 36 (maximum compression, lower quality)
+  const crf = 18 + Math.round((power - 1) * (36 - 18) / 9);
+  
+  // Get input file size
+  const inputStats = fs.statSync(inputPath);
+  const inputSizeMB = (inputStats.size / (1024 * 1024)).toFixed(2);
+  
+  console.log('CS:GO Highlights Compressor');
+  console.log('===========================');
+  console.log(`Input: ${inputPath}`);
+  console.log(`Output: ${outputPath}`);
+  console.log(`Power: ${power}/10 (CRF: ${crf})`);
+  console.log(`Input size: ${inputSizeMB} MB`);
+  console.log('');
+  console.log('Compressing video...');
+  
+  try {
+    await runFfmpegCompress(inputPath, outputPath, crf);
+    
+    // Get output file size
+    const outputStats = fs.statSync(outputPath);
+    const outputSizeMB = (outputStats.size / (1024 * 1024)).toFixed(2);
+    const reduction = (((inputStats.size - outputStats.size) / inputStats.size) * 100).toFixed(1);
+    
+    console.log('\n===========================');
+    console.log('Compression Complete!');
+    console.log('===========================');
+    console.log(`Output: ${outputPath}`);
+    console.log(`Original size: ${inputSizeMB} MB`);
+    console.log(`Compressed size: ${outputSizeMB} MB`);
+    console.log(`Size reduction: ${reduction}%`);
+    
+  } catch (err) {
+    console.error(`\nError during compression: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+function runFfmpegCompress(inputPath, outputPath, crf) {
+  const { spawn } = require('child_process');
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', inputPath,
+      '-c:v', 'libx264',
+      '-crf', crf.toString(),
+      '-preset', 'medium',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-y',
+      outputPath,
+    ];
+    
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    let errorOutput = '';
+    let lastProgress = '';
+    
+    ffmpeg.stderr.on('data', (data) => {
+      const output = data.toString();
+      errorOutput += output;
+      
+      // Extract and display progress
+      const timeMatch = output.match(/time=(\d{2}:\d{2}:\d{2}\.\d{2})/);
+      if (timeMatch && timeMatch[1] !== lastProgress) {
+        lastProgress = timeMatch[1];
+        process.stdout.write(`\r  Progress: ${lastProgress}`);
+      }
+    });
+    
+    ffmpeg.on('close', (code) => {
+      process.stdout.write('\n');
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg compression failed with code ${code}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      reject(new Error(`Failed to run FFmpeg: ${err.message}. Make sure FFmpeg is installed and in PATH.`));
+    });
+  });
 }
 
