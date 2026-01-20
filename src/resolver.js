@@ -43,7 +43,18 @@ function compareHighlights(a, b) {
   if (a.priority !== b.priority) {
     return a.priority - b.priority;
   }
-  // If priority is equal, compare by points
+  
+  // For kill-series vs kill-series, compare by kill count first
+  // (3 kills > 2 kills, even if 2 kills has knife with more points)
+  if (a.type === 'kill-series' && b.type === 'kill-series') {
+    const killCountA = a.killCount || 0;
+    const killCountB = b.killCount || 0;
+    if (killCountA !== killCountB) {
+      return killCountA - killCountB;
+    }
+  }
+  
+  // If priority (and killCount for series) is equal, compare by points
   const pointsA = a.points || 0;
   const pointsB = b.points || 0;
   return pointsA - pointsB;

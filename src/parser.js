@@ -11,10 +11,22 @@ const SNIPER_WEAPONS = [
   'awp', 'ssg08', 'g3sg1', 'scar20',
 ];
 
-// Everything else that's not pistol/sniper/knife is considered rifle
+const SHOTGUN_WEAPONS = [
+  'nova', 'xm1014', 'mag7', 'sawedoff',
+];
+
+// Weapons where headshot series (2+ kills) is impressive enough to be a highlight
+const HEADSHOT_SERIES_WEAPONS = [
+  ...SNIPER_WEAPONS,
+  ...SHOTGUN_WEAPONS,
+  'deagle',  // Desert Eagle
+  'revolver', // R8 Revolver
+];
+
+// Everything else that's not pistol/sniper/shotgun/knife is considered rifle
 
 /**
- * Get weapon category: 'pistol', 'sniper', 'rifle', or 'knife'
+ * Get weapon category: 'pistol', 'sniper', 'shotgun', 'rifle', or 'knife'
  * @param {string} weapon - Weapon name
  * @returns {string}
  */
@@ -28,10 +40,25 @@ function getWeaponCategory(weapon) {
   if (SNIPER_WEAPONS.includes(normalized)) {
     return 'sniper';
   }
+  if (SHOTGUN_WEAPONS.includes(normalized)) {
+    return 'shotgun';
+  }
   if (PISTOL_WEAPONS.includes(normalized)) {
     return 'pistol';
   }
   return 'rifle';
+}
+
+/**
+ * Check if a weapon qualifies for headshot series highlight
+ * (deagle, revolver, snipers, shotguns)
+ * @param {string} weapon - Weapon name
+ * @returns {boolean}
+ */
+function isHeadshotSeriesWeapon(weapon) {
+  if (!weapon) return false;
+  const normalized = weapon.toLowerCase().replace('weapon_', '');
+  return HEADSHOT_SERIES_WEAPONS.includes(normalized);
 }
 
 // Knife weapon names in CS:GO
@@ -119,8 +146,8 @@ function parseDemo(filePath) {
 
       for (const player of players) {
         if (player && player.isAlive) {
-          if (player.team === 3) aliveCT++; // CT
-          else if (player.team === 2) aliveT++; // T
+          if (player.teamNumber === 3) aliveCT++; // CT
+          else if (player.teamNumber === 2) aliveT++; // T
         }
       }
 
@@ -164,7 +191,7 @@ function parseDemo(filePath) {
       if (!attacker || !victim) return;
 
       // Skip team kills
-      if (attacker.team === victim.team) return;
+      if (attacker.teamNumber === victim.teamNumber) return;
 
       // Skip warmup kills (heuristic: if match hasn't started and we're in first few rounds)
       if (isWarmup && !matchStarted && rounds.length < 1) return;
@@ -176,32 +203,33 @@ function parseDemo(filePath) {
         attacker: {
           name: attacker.name,
           steamId: attacker.steam64Id?.toString() || null,
-          team: attacker.team,
+          team: attacker.teamNumber,
         },
         victim: {
           name: victim.name,
           steamId: victim.steam64Id?.toString() || null,
-          team: victim.team,
+          team: victim.teamNumber,
         },
         weapon: e.weapon,
         weaponCategory,
         headshot: e.headshot,
         noscope: e.noscope || false,
         isKnife: weaponCategory === 'knife',
+        isHeadshotSeriesWeapon: isHeadshotSeriesWeapon(e.weapon),
         round: rounds.length + 1,
       };
 
       kills.push(kill);
 
       // Update alive counts for clutch detection
-      if (victim.team === 3) aliveCT--;
-      else if (victim.team === 2) aliveT--;
+      if (victim.teamNumber === 3) aliveCT--;
+      else if (victim.teamNumber === 2) aliveT--;
 
       // Check for clutch situation
       if (currentRound && !currentRound.clutchSituation) {
         if (aliveCT === 1 && aliveT >= 2) {
           // CT is in 1vX situation
-          const ctPlayer = demoFile.entities.players.find(p => p && p.isAlive && p.team === 3);
+          const ctPlayer = demoFile.entities.players.find(p => p && p.isAlive && p.teamNumber === 3);
           if (ctPlayer) {
             currentRound.clutchSituation = {
               player: {
@@ -215,7 +243,7 @@ function parseDemo(filePath) {
           }
         } else if (aliveT === 1 && aliveCT >= 2) {
           // T is in 1vX situation
-          const tPlayer = demoFile.entities.players.find(p => p && p.isAlive && p.team === 2);
+          const tPlayer = demoFile.entities.players.find(p => p && p.isAlive && p.teamNumber === 2);
           if (tPlayer) {
             currentRound.clutchSituation = {
               player: {
@@ -260,8 +288,11 @@ function parseDemo(filePath) {
 module.exports = {
   parseDemo,
   isKnife,
+  isHeadshotSeriesWeapon,
   getWeaponCategory,
   KNIFE_WEAPONS,
   SNIPER_WEAPONS,
+  SHOTGUN_WEAPONS,
   PISTOL_WEAPONS,
+  HEADSHOT_SERIES_WEAPONS,
 };

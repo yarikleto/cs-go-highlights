@@ -4,7 +4,7 @@ const { program } = require('commander');
 const path = require('path');
 const fs = require('fs');
 const { parseDemo } = require('./parser');
-const { detectHighlights, KILL_POINTS, PRIORITIES } = require('./detector');
+const { detectHighlights } = require('./detector');
 const { resolveCollisions } = require('./resolver');
 
 // Default configuration (full config for generation)
@@ -12,7 +12,7 @@ const DEFAULT_CONFIG = {
   // Detection settings
   detection: {
     maxDelay: 15,           // seconds between kills for series
-    minKills: 3,            // minimum kills for kill series
+    minSeriesKills: 3,      // minimum kills for regular series (2-kill series with knife always qualifies)
     minEnemies: 2,          // minimum enemies for clutch (1vX)
   },
   

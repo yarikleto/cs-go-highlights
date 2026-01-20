@@ -63,16 +63,37 @@ function detectHighlights(demoData, config) {
   // Convert max delay from seconds to ticks
   const maxDelayTicks = detection.maxDelay * tickRate;
 
-  // Detect kill series
-  const killSeriesHighlights = detectKillSeries(kills, maxDelayTicks, detection.minKills, killPoints, priorities);
+  // Detect kill series first
+  const killSeriesHighlights = detectKillSeries(kills, maxDelayTicks, detection.minSeriesKills, killPoints, priorities);
   highlights.push(...killSeriesHighlights);
+
+  // Collect knife kills that are already part of a series (by player + tick)
+  // These should not generate separate knife highlights
+  const knifeKillsInSeries = new Set();
+  for (const series of killSeriesHighlights) {
+    if (series.containsKnife) {
+      const playerKey = series.player.steamId || series.player.name;
+      for (const kill of series.kills) {
+        // Check if this kill in the series is a knife kill
+        // We need to match against original kills to check isKnife
+        const originalKill = kills.find(k => 
+          k.tick === kill.tick && 
+          (k.attacker.steamId || k.attacker.name) === playerKey &&
+          k.isKnife
+        );
+        if (originalKill) {
+          knifeKillsInSeries.add(`${playerKey}_${kill.tick}`);
+        }
+      }
+    }
+  }
 
   // Detect collaterals (multiple kills on same tick)
   const collateralHighlights = detectCollaterals(kills, killPoints, priorities);
   highlights.push(...collateralHighlights);
 
-  // Detect knife kills
-  const knifeHighlights = detectKnifeKills(kills, killPoints, priorities);
+  // Detect knife kills (excluding those already in a series)
+  const knifeHighlights = detectKnifeKills(kills, killPoints, priorities, knifeKillsInSeries);
   highlights.push(...knifeHighlights);
 
   // Detect clutches
@@ -84,14 +105,20 @@ function detectHighlights(demoData, config) {
 
 /**
  * Detect kill series (consecutive kills within time window)
+ * 
+ * A kill series qualifies as a highlight if:
+ * - It has at least minSeriesKills kills, OR
+ * - It has at least 2 kills AND contains a knife kill, OR
+ * - It has at least 2 kills AND all are headshots with special weapons (deagle/revolver/sniper/shotgun)
+ * 
  * @param {Array} kills - Array of kill events
  * @param {number} maxDelayTicks - Max ticks between kills
- * @param {number} minKills - Minimum kills for a series
+ * @param {number} minSeriesKills - Minimum kills for a regular series (2-kill with knife always qualifies)
  * @param {Object} killPoints - Kill points config
  * @param {Object} priorities - Priorities config
  * @returns {Array} Kill series highlights
  */
-function detectKillSeries(kills, maxDelayTicks, minKills, killPoints = KILL_POINTS, priorities = PRIORITIES) {
+function detectKillSeries(kills, maxDelayTicks, minSeriesKills, killPoints = KILL_POINTS, priorities = PRIORITIES) {
   const highlights = [];
   
   // Group kills by attacker
@@ -117,15 +144,32 @@ function detectKillSeries(kills, maxDelayTicks, minKills, killPoints = KILL_POIN
       const prevKill = attackerKills[i - 1];
       const currentKill = attackerKills[i];
       
-      // Check if series should end
+      // Check if series should end (time gap too long OR round changed)
       const shouldEndSeries = isLastKill || 
-        (currentKill.tick - prevKill.tick > maxDelayTicks);
+        (currentKill.tick - prevKill.tick > maxDelayTicks) ||
+        (currentKill.round !== prevKill.round);
 
       if (shouldEndSeries) {
         const seriesLength = i - seriesStart;
+        const seriesKills = attackerKills.slice(seriesStart, i);
         
-        if (seriesLength >= minKills) {
-          const seriesKills = attackerKills.slice(seriesStart, i);
+        // Check if series contains a knife kill
+        const containsKnife = seriesKills.some(k => k.isKnife);
+        
+        // Check if all kills are headshots with special weapons (deagle, sniper, shotgun)
+        const allHeadshotsWithSpecialWeapon = seriesKills.every(k => 
+          k.headshot && k.isHeadshotSeriesWeapon
+        );
+        
+        // Series qualifies if:
+        // - Meets minimum kills threshold, OR
+        // - Has at least 2 kills AND contains a knife kill, OR
+        // - Has at least 2 kills AND all are headshots with special weapons (deagle/sniper/shotgun)
+        const qualifies = seriesLength >= minSeriesKills || 
+          (seriesLength >= 2 && containsKnife) ||
+          (seriesLength >= 2 && allHeadshotsWithSpecialWeapon);
+        
+        if (qualifies) {
           const firstKill = seriesKills[0];
           const lastKill = seriesKills[seriesKills.length - 1];
           
@@ -140,9 +184,13 @@ function detectKillSeries(kills, maxDelayTicks, minKills, killPoints = KILL_POIN
             noscope: k.noscope || false,
           }));
           
+          // Kill series priority (knife-containing series keep same priority as regular series)
+          // Collision between kill-series is resolved by killCount, then by points
+          const priority = priorities['kill-series'] || PRIORITIES['kill-series'];
+          
           highlights.push({
             type: 'kill-series',
-            priority: priorities['kill-series'] || PRIORITIES['kill-series'],
+            priority,
             player: {
               name: firstKill.attacker.name,
               steamId: firstKill.attacker.steamId,
@@ -152,6 +200,8 @@ function detectKillSeries(kills, maxDelayTicks, minKills, killPoints = KILL_POIN
             killCount: seriesLength,
             points,
             kills,
+            containsKnife,
+            allHeadshotsWithSpecialWeapon,
           });
         }
         
@@ -223,13 +273,21 @@ function detectCollaterals(kills, killPoints = KILL_POINTS, priorities = PRIORIT
  * @param {Array} kills - Array of kill events
  * @param {Object} killPoints - Kill points config
  * @param {Object} priorities - Priorities config
+ * @param {Set} excludeKills - Set of "playerId_tick" keys to exclude (knife kills already in series)
  * @returns {Array} Knife kill highlights
  */
-function detectKnifeKills(kills, killPoints = KILL_POINTS, priorities = PRIORITIES) {
+function detectKnifeKills(kills, killPoints = KILL_POINTS, priorities = PRIORITIES, excludeKills = new Set()) {
   const highlights = [];
   
   for (const kill of kills) {
     if (kill.isKnife) {
+      // Skip knife kills that are already part of a kill series
+      const playerKey = kill.attacker.steamId || kill.attacker.name;
+      const killKey = `${playerKey}_${kill.tick}`;
+      if (excludeKills.has(killKey)) {
+        continue;
+      }
+      
       const points = calculateKillPoints(kill, killPoints);
       
       highlights.push({
