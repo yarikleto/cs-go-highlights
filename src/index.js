@@ -6,9 +6,17 @@ const fs = require('fs');
 const { parseDemo } = require('./parser');
 const { detectHighlights } = require('./detector');
 const { resolveCollisions } = require('./resolver');
+const { recordAllHighlights } = require('./recorder');
+const { mergeClips, cleanupTempFiles, generateSummary } = require('./merger');
 
 // Default configuration (full config for generation)
 const DEFAULT_CONFIG = {
+  // Padding settings (in seconds) - adjust these to control clip length
+  padding: {
+    before: 4,  // seconds before highlight starts
+    after: 5,   // seconds after highlight ends
+  },
+  
   // Detection settings
   detection: {
     maxDelay: 15,           // seconds between kills for series
@@ -51,6 +59,27 @@ program
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
   .option('--output <path>', 'Output folder for highlights.json', './output')
   .action(analyzeCommand);
+
+// Record command - record highlights using HLAE
+program
+  .command('record')
+  .description('Record highlights using HLAE (produces individual clips)')
+  .requiredOption('--highlights <path>', 'Path to highlights.json file')
+  .requiredOption('--demos <path>', 'Path to folder with .dem files')
+  .requiredOption('--hlae <path>', 'Path to HLAE executable (hlae.exe)')
+  .requiredOption('--csgo <path>', 'Path to CS:GO installation folder')
+  .option('--output <path>', 'Output folder for clips', './output')
+  .option('--player <steamId>', 'Filter highlights by player Steam ID')
+  .action(recordCommand);
+
+// Merge command - merge recorded clips into a single video
+program
+  .command('merge')
+  .description('Merge recorded clips into a single video using FFmpeg')
+  .requiredOption('--clips <path>', 'Path to folder containing clip files (.mp4)')
+  .option('--output <path>', 'Output path for final video', './output/highlights_final.mp4')
+  .option('--cleanup', 'Delete individual clips after merging')
+  .action(mergeCommand);
 
 program.parse(process.argv);
 
@@ -113,10 +142,6 @@ async function analyzeCommand(options) {
       highlights = resolveCollisions(highlights);
       console.log(`  After collision resolution: ${highlights.length}`);
 
-      // Padding settings (in seconds)
-      const PADDING_BEFORE = 2; // seconds before highlight
-      const PADDING_AFTER = 1;  // seconds after highlight
-      
       // Add demo file reference, duration, and playback info to each highlight
       highlights = highlights.map(h => {
         const tickRate = demoData.tickRate;
@@ -137,8 +162,10 @@ async function analyzeCommand(options) {
         const durationSeconds = (endTick - startTick) / tickRate;
         
         // Calculate playback ticks with padding
-        const paddingBeforeTicks = Math.round(PADDING_BEFORE * tickRate);
-        const paddingAfterTicks = Math.round(PADDING_AFTER * tickRate);
+        const paddingBefore = DEFAULT_CONFIG.padding.before;
+        const paddingAfter = DEFAULT_CONFIG.padding.after;
+        const paddingBeforeTicks = Math.round(paddingBefore * tickRate);
+        const paddingAfterTicks = Math.round(paddingAfter * tickRate);
         const playbackStartTick = Math.max(0, startTick - paddingBeforeTicks);
         const playbackEndTick = endTick + paddingAfterTicks;
         
@@ -153,8 +180,8 @@ async function analyzeCommand(options) {
             startTick: playbackStartTick,
             endTick: playbackEndTick,
             durationSeconds: Math.round(playbackDurationSeconds * 100) / 100,
-            paddingBefore: PADDING_BEFORE,
-            paddingAfter: PADDING_AFTER,
+            paddingBefore: paddingBefore,
+            paddingAfter: paddingAfter,
           },
         };
       });
@@ -191,5 +218,176 @@ async function analyzeCommand(options) {
   console.log(`\nResults written to: ${outputFile}`);
   console.log(`Total highlights: ${results.summary.totalHighlights}`);
   console.log('By type:', results.summary.byType);
+}
+
+async function recordCommand(options) {
+  const highlightsPath = path.resolve(options.highlights);
+  const demosPath = path.resolve(options.demos);
+  const hlaePath = path.resolve(options.hlae);
+  const csgoPath = path.resolve(options.csgo);
+  const outputPath = path.resolve(options.output);
+  const playerFilter = options.player || null;
+
+  // Validate highlights.json exists
+  if (!fs.existsSync(highlightsPath)) {
+    console.error(`Error: Highlights file not found: ${highlightsPath}`);
+    process.exit(1);
+  }
+
+  // Validate demos folder exists
+  if (!fs.existsSync(demosPath)) {
+    console.error(`Error: Demos folder not found: ${demosPath}`);
+    process.exit(1);
+  }
+
+  // Validate HLAE executable exists
+  if (!fs.existsSync(hlaePath)) {
+    console.error(`Error: HLAE executable not found: ${hlaePath}`);
+    process.exit(1);
+  }
+
+  // Validate CS:GO folder exists
+  if (!fs.existsSync(csgoPath)) {
+    console.error(`Error: CS:GO folder not found: ${csgoPath}`);
+    process.exit(1);
+  }
+
+  // Parse highlights.json
+  let highlightsData;
+  try {
+    const content = fs.readFileSync(highlightsPath, 'utf-8');
+    highlightsData = JSON.parse(content);
+  } catch (err) {
+    console.error(`Error: Failed to parse highlights.json: ${err.message}`);
+    process.exit(1);
+  }
+
+  // Count total highlights
+  let totalHighlights = 0;
+  for (const demo of highlightsData.demos) {
+    for (const highlight of demo.highlights) {
+      if (!playerFilter || highlight.player.steamId === playerFilter) {
+        totalHighlights++;
+      }
+    }
+  }
+
+  if (totalHighlights === 0) {
+    console.error('Error: No highlights found to record');
+    if (playerFilter) {
+      console.error(`  (filtered by player: ${playerFilter})`);
+    }
+    process.exit(1);
+  }
+
+  console.log('CS:GO Highlights Recorder');
+  console.log('=========================');
+  console.log(`Highlights file: ${highlightsPath}`);
+  console.log(`Demos folder: ${demosPath}`);
+  console.log(`HLAE path: ${hlaePath}`);
+  console.log(`CS:GO path: ${csgoPath}`);
+  console.log(`Output folder: ${outputPath}`);
+  console.log(`Total highlights to record: ${totalHighlights}`);
+  if (playerFilter) {
+    console.log(`Filtering by player: ${playerFilter}`);
+  }
+
+  // Ensure output directory exists
+  if (!fs.existsSync(outputPath)) {
+    fs.mkdirSync(outputPath, { recursive: true });
+  }
+
+  try {
+    // Record all highlights
+    const recordedClips = await recordAllHighlights({
+      highlightsData,
+      demosPath,
+      hlaePath,
+      csgoPath,
+      outputPath,
+      playerFilter,
+    });
+
+    if (recordedClips.length === 0) {
+      console.error('\nError: No clips were recorded successfully');
+      process.exit(1);
+    }
+
+    console.log('\n=========================');
+    console.log('Recording Complete!');
+    console.log('=========================');
+    console.log(`Recorded ${recordedClips.length} clips`);
+    console.log(`Clips saved to: ${path.join(outputPath, 'clips')}`);
+    console.log(`\nTo merge clips into a single video, run:`);
+    console.log(`  node src/index.js merge --clips "${path.join(outputPath, 'clips')}"`);
+
+    // Cleanup temp files
+    cleanupTempFiles(outputPath);
+
+  } catch (err) {
+    console.error(`\nError during recording: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+async function mergeCommand(options) {
+  const clipsPath = path.resolve(options.clips);
+  const outputPath = path.resolve(options.output);
+  const shouldCleanup = options.cleanup || false;
+
+  // Validate clips folder exists
+  if (!fs.existsSync(clipsPath)) {
+    console.error(`Error: Clips folder not found: ${clipsPath}`);
+    process.exit(1);
+  }
+
+  // Find all .mp4 files in the clips folder
+  const clipFiles = fs.readdirSync(clipsPath)
+    .filter(file => file.endsWith('.mp4'))
+    .sort() // Sort alphabetically to maintain order (clip_0001, clip_0002, etc.)
+    .map(file => path.join(clipsPath, file));
+
+  if (clipFiles.length === 0) {
+    console.error(`Error: No .mp4 files found in: ${clipsPath}`);
+    process.exit(1);
+  }
+
+  console.log('CS:GO Highlights Merger');
+  console.log('=======================');
+  console.log(`Clips folder: ${clipsPath}`);
+  console.log(`Output file: ${outputPath}`);
+  console.log(`Found ${clipFiles.length} clips to merge`);
+  if (shouldCleanup) {
+    console.log('Cleanup: Will delete clips after merging');
+  }
+
+  // Ensure output directory exists
+  const outputDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  try {
+    await mergeClips({
+      clipPaths: clipFiles,
+      outputPath,
+      cleanupClips: shouldCleanup,
+    });
+
+    // Generate and display summary
+    const summary = await generateSummary(outputPath, clipFiles.length);
+
+    console.log('\n=======================');
+    console.log('Merge Complete!');
+    console.log('=======================');
+    console.log(`Final video: ${summary.outputFile}`);
+    console.log(`Total clips: ${summary.clipCount}`);
+    console.log(`Duration: ${summary.durationFormatted}`);
+    console.log(`File size: ${summary.fileSizeMB} MB`);
+
+  } catch (err) {
+    console.error(`\nError during merging: ${err.message}`);
+    process.exit(1);
+  }
 }
 

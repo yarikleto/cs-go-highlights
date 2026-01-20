@@ -234,7 +234,7 @@ function parseDemo(filePath) {
             currentRound.clutchSituation = {
               player: {
                 name: ctPlayer.name,
-                odensity: ctPlayer.steam64Id?.toString() || null,
+                steamId: ctPlayer.steam64Id?.toString() || null,
               },
               team: 3,
               enemies: aliveT,
@@ -248,7 +248,7 @@ function parseDemo(filePath) {
             currentRound.clutchSituation = {
               player: {
                 name: tPlayer.name,
-                odensity: tPlayer.steam64Id?.toString() || null,
+                steamId: tPlayer.steam64Id?.toString() || null,
               },
               team: 2,
               enemies: aliveCT,

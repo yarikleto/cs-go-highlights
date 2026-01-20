@@ -39,6 +39,164 @@ node src/index.js analyze --demos <path> [--output <path>]
 node src/index.js analyze --demos ./my-demos --output ./results
 ```
 
+### `record`
+
+Records all highlights using HLAE (Half-Life Advanced Effects). Produces individual video clips for each highlight.
+
+```bash
+node src/index.js record --highlights <path> --demos <path> --hlae <path> --csgo <path> [options]
+```
+
+**Quick example** (copy and edit paths):
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\HLAE.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
+```
+
+#### Prerequisites
+
+- **HLAE**: Download from [https://www.advancedfx.org/](https://www.advancedfx.org/)
+- **FFmpeg**: Must be installed and available in PATH. Download from [https://ffmpeg.org/](https://ffmpeg.org/)
+- **CS:GO Legacy**: You must have the **Legacy Version of CS:GO** installed (not CS2). To install it:
+  1. In Steam, right-click Counter-Strike 2 → Properties → Betas
+  2. Select "csgo_legacy - Legacy Version of CS:GO"
+  3. Or when launching, choose "Play Legacy Version of CS:GO"
+  
+  The legacy version is typically installed at:
+  `C:\Steam\steamapps\common\Counter-Strike Global Offensive`
+  
+  **Note**: HLAE does not support Counter-Strike 2. Only the legacy CS:GO version is compatible.
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--highlights <path>` | Yes | - | Path to `highlights.json` file |
+| `--demos <path>` | Yes | - | Path to folder containing `.dem` files |
+| `--hlae <path>` | Yes | - | Path to HLAE executable (`hlae.exe`) |
+| `--csgo <path>` | Yes | - | Path to CS:GO installation folder |
+| `--output <path>` | No | `./output` | Output folder for clips |
+| `--player <steamId>` | No | - | Filter highlights by player Steam ID |
+
+#### Recording Settings
+
+Default recording settings (high quality, hardcoded):
+- Resolution: 1920x1080 (Full HD)
+- Framerate: 60 FPS
+- Codec: H.264 (libx264)
+- Quality: CRF 15 (very high quality)
+- Preset: slow (better compression)
+- Audio: AAC 320kbps
+
+#### Automatic CS:GO Setup
+
+The `record` command automatically configures CS:GO for optimal highlight recording. **Your normal game settings are NOT modified** - these settings are applied only during the recording session via a temporary CFG file.
+
+Settings automatically applied during recording:
+
+| Category | Settings |
+|----------|----------|
+| **HUD** | Hidden (cl_drawhud 0, cl_draw_only_deathnotices 1) |
+| **Viewmodel** | Hidden (r_drawviewmodel 0) |
+| **X-Ray** | Disabled (spec_show_xray 0) |
+| **Overlays** | Disabled (net_graph 0, cl_showfps 0) |
+| **Music** | Muted (all music volumes set to 0) |
+| **Graphics** | High quality (HDR, postprocessing enabled) |
+| **Tracers** | Enabled (r_drawtracers_firstperson 1) |
+
+After recording completes, CS:GO closes and your original settings remain unchanged in your config files.
+
+#### Examples
+
+Record all highlights:
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
+```
+
+**Important**: The `--csgo` path must point to the Legacy CS:GO installation folder containing `csgo.exe`, not CS2.
+
+Record only highlights from a specific player:
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --player 76561198012345678
+```
+
+#### Output
+
+The command produces individual clips in `<output>/clips/` folder (e.g., `clip_0001.mp4`, `clip_0002.mp4`).
+
+#### Recording Process
+
+1. Parses `highlights.json` and validates demo files exist
+2. For each highlight:
+   - Generates a CFG file with HLAE recording commands
+   - Launches HLAE with CS:GO and the demo file
+   - Records the highlight tick range using `mirv_streams`
+   - Encodes TGA image sequence to MP4 using FFmpeg
+3. Cleans up temporary files
+
+### `merge`
+
+Merges recorded clips into a single video using FFmpeg.
+
+```bash
+node src/index.js merge --clips <path> [--output <path>] [--cleanup]
+```
+
+#### Prerequisites
+
+- **FFmpeg**: Must be installed and available in PATH. Download from [https://ffmpeg.org/](https://ffmpeg.org/)
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--clips <path>` | Yes | - | Path to folder containing `.mp4` clip files |
+| `--output <path>` | No | `./output/highlights_final.mp4` | Output path for final video |
+| `--cleanup` | No | - | Delete individual clips after merging |
+
+#### Examples
+
+Merge clips into a single video:
+
+```bash
+node src/index.js merge --clips ./output/clips
+```
+
+Merge with custom output path:
+
+```bash
+node src/index.js merge --clips ./output/clips --output ./my_highlights.mp4
+```
+
+Merge and delete individual clips after:
+
+```bash
+node src/index.js merge --clips ./output/clips --cleanup
+```
+
+#### Output
+
+The command produces a single merged video file (default: `./output/highlights_final.mp4`).
+
+## Typical Workflow
+
+1. **Analyze** demos to detect highlights:
+   ```bash
+   node src/index.js analyze --demos ./demos
+   ```
+
+2. **Record** highlights using HLAE:
+   ```bash
+   node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
+   ```
+
+3. **Merge** clips into final video:
+   ```bash
+   node src/index.js merge --clips ./output/clips
+   ```
+
 ## Highlight Types
 
 The tool detects four types of highlights, each with a priority level (used for collision resolution):

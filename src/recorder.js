@@ -1,0 +1,676 @@
+const { spawn, execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+// Track active processes for cleanup on SIGINT/SIGTERM
+let activeHlaeProcess = null;
+let activeFfmpegProcess = null;
+let cleanupCallbacks = [];
+let isShuttingDown = false;
+
+/**
+ * Registers cleanup handlers for graceful shutdown
+ */
+function setupSignalHandlers() {
+  const cleanup = async () => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    
+    console.log('\n\n  Interrupted! Cleaning up...');
+    
+    // Kill HLAE process (this will also close CS:GO)
+    if (activeHlaeProcess) {
+      console.log('    Terminating HLAE...');
+      try {
+        activeHlaeProcess.kill('SIGTERM');
+        // On Windows, also try to kill csgo.exe directly
+        if (process.platform === 'win32') {
+          try {
+            execSync('taskkill /F /IM csgo.exe 2>nul', { stdio: 'ignore' });
+          } catch (e) {
+            // Ignore - process might not be running
+          }
+        }
+      } catch (e) {
+        // Ignore
+      }
+    }
+    
+    // Kill FFmpeg process
+    if (activeFfmpegProcess) {
+      console.log('    Terminating FFmpeg...');
+      try {
+        activeFfmpegProcess.kill('SIGTERM');
+      } catch (e) {
+        // Ignore
+      }
+    }
+    
+    // Run any registered cleanup callbacks (e.g., removing temp files)
+    for (const cb of cleanupCallbacks) {
+      try {
+        cb();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+    
+    console.log('    Cleanup complete. Exiting.\n');
+    process.exit(1);
+  };
+  
+  // Handle Ctrl+C (SIGINT) and termination (SIGTERM)
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+  
+  // On Windows, also handle the close event
+  if (process.platform === 'win32') {
+    process.on('SIGHUP', cleanup);
+  }
+}
+
+// Initialize signal handlers
+setupSignalHandlers();
+
+// Default recording settings (high quality encoding at 1080p)
+const DEFAULT_SETTINGS = {
+  width: 1920,
+  height: 1080,
+  framerate: 60,
+  // FFmpeg encoding settings (high quality)
+  crf: 15,           // Lower = higher quality (0-51, 15 is very high quality)
+  preset: 'slow',    // Slower = better compression/quality (ultrafast, fast, medium, slow, veryslow)
+};
+
+/**
+ * Records a single highlight using HLAE
+ * @param {Object} options Recording options
+ * @param {string} options.hlaePath Path to HLAE executable
+ * @param {string} options.csgoPath Path to CS:GO installation
+ * @param {string} options.demoPath Full path to demo file
+ * @param {Object} options.highlight Highlight object from highlights.json
+ * @param {string} options.outputPath Output folder for clips
+ * @param {number} options.clipIndex Index of this clip (for naming)
+ * @returns {Promise<string>} Path to the recorded clip
+ */
+async function recordHighlight(options) {
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex } = options;
+  
+  const clipName = `clip_${String(clipIndex).padStart(4, '0')}`;
+  const clipFolder = path.join(outputPath, 'clips', clipName);
+  const clipOutputPath = path.join(outputPath, 'clips', `${clipName}.mp4`);
+  
+  // Create clip folder for TGA/WAV output
+  if (!fs.existsSync(clipFolder)) {
+    fs.mkdirSync(clipFolder, { recursive: true });
+  }
+  
+  // Generate CFG content for this recording
+  const cfgContent = generateRecordingCfg({
+    highlight,
+    clipFolder,
+    clipName,
+    settings: DEFAULT_SETTINGS,
+  });
+  
+  // CFG filename (just the name, no path)
+  const cfgFileName = `hlae_record_${clipName}.cfg`;
+  
+  // Copy CFG to CS:GO cfg folder so exec command can find it
+  const csgoCfgFolder = path.join(csgoPath, 'csgo', 'cfg');
+  const cfgInGamePath = path.join(csgoCfgFolder, cfgFileName);
+  
+  // Ensure CS:GO cfg folder exists
+  if (!fs.existsSync(csgoCfgFolder)) {
+    fs.mkdirSync(csgoCfgFolder, { recursive: true });
+  }
+  
+  // Write CFG file to CS:GO cfg folder
+  fs.writeFileSync(cfgInGamePath, cfgContent);
+  console.log(`    [1/4] CFG file created: ${cfgFileName}`);
+  
+  // Generate VDM file for tick-accurate demo control
+  // VDM file must be next to the demo file with same name
+  const vdmContent = generateVdmFile({
+    highlight,
+    clipFolder,
+    cfgFileName,
+  });
+  
+  // VDM path: same as demo but with .vdm extension
+  const vdmPath = demoPath.replace(/\.dem$/i, '.vdm');
+  
+  // Backup existing VDM if present
+  let existingVdm = null;
+  if (fs.existsSync(vdmPath)) {
+    existingVdm = fs.readFileSync(vdmPath);
+  }
+  
+  // Write VDM file
+  fs.writeFileSync(vdmPath, vdmContent);
+  console.log(`    [2/4] VDM file created (skip to tick ${highlight.playback.startTick - 128}, record ${highlight.playback.startTick}-${highlight.playback.endTick})`);
+  console.log(`    [3/4] Launching HLAE + CS:GO... (estimated clip: ${highlight.playback.durationSeconds}s)`);
+  
+  // Register cleanup callbacks for SIGINT handling
+  const cleanupTempFiles = () => {
+    try {
+      if (fs.existsSync(cfgInGamePath)) {
+        fs.unlinkSync(cfgInGamePath);
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      if (existingVdm) {
+        fs.writeFileSync(vdmPath, existingVdm);
+      } else if (fs.existsSync(vdmPath)) {
+        fs.unlinkSync(vdmPath);
+      }
+    } catch (e) { /* ignore */ }
+  };
+  cleanupCallbacks.push(cleanupTempFiles);
+  
+  // Launch HLAE with CS:GO and the demo
+  try {
+    await launchHlaeRecording({
+      hlaePath,
+      csgoPath,
+      demoPath,
+      cfgFileName, // Just the filename, not full path
+      highlight,
+    });
+    console.log(`    [3/4] Recording completed, CS:GO closed`);
+  } finally {
+    // Remove from cleanup callbacks (already handled)
+    const idx = cleanupCallbacks.indexOf(cleanupTempFiles);
+    if (idx !== -1) cleanupCallbacks.splice(idx, 1);
+    
+    // Clean up temp files
+    cleanupTempFiles();
+  }
+  
+  // Encode TGA sequence to MP4 using FFmpeg (high quality)
+  console.log(`    [4/4] Encoding to MP4 (CRF ${DEFAULT_SETTINGS.crf}, ${DEFAULT_SETTINGS.preset} preset)...`);
+  await encodeTgaToMp4({
+    inputFolder: clipFolder,
+    clipName,
+    outputPath: clipOutputPath,
+    framerate: DEFAULT_SETTINGS.framerate,
+    crf: DEFAULT_SETTINGS.crf,
+    preset: DEFAULT_SETTINGS.preset,
+  });
+  console.log(`    [4/4] Encoding completed: ${clipName}.mp4`);
+  
+  // Clean up TGA/WAV files
+  cleanupTgaFiles(clipFolder);
+  
+  return clipOutputPath;
+}
+
+/**
+ * Converts Steam64 ID to Steam32 (account ID) for CS:GO commands
+ * Returns null if steam64 is undefined/null
+ */
+function steam64ToAccountId(steam64) {
+  if (!steam64) {
+    return null;
+  }
+  // Steam64 = Steam32 + 76561197960265728
+  const steam64BigInt = BigInt(steam64);
+  const accountId = steam64BigInt - BigInt('76561197960265728');
+  return accountId.toString();
+}
+
+/**
+ * Generates VDM file content for tick-accurate demo control
+ * VDM files are the Source engine's native way to control demo playback
+ */
+function generateVdmFile(options) {
+  const { highlight, clipFolder, cfgFileName } = options;
+  const { startTick, endTick } = highlight.playback;
+  
+  // Normalize path for CS:GO console (use forward slashes)
+  const normalizedClipFolder = clipFolder.replace(/\\/g, '/');
+  
+  // Calculate ticks
+  const preloadTick = Math.max(1, startTick - 1280); // 10 seconds before, minimum tick 1 (allows announcer sounds to finish)
+  
+  // Convert Steam64 to account ID for spec_player_by_accountid
+  const accountId = steam64ToAccountId(highlight.player.steamId);
+  
+  // Build spec commands only if accountId is available
+  const specCmd = accountId ? `spec_player_by_accountid ${accountId}; spec_mode 4` : '';
+  const specCmdWithSemi = specCmd ? `${specCmd}; ` : '';
+  
+  // VDM file format - Valve Demo Manager
+  // SkipAhead: jumps to a specific tick
+  // PlayCommands: executes console commands at a specific tick
+  const vdm = `demoactions
+{
+    "1"
+    {
+        factory "SkipAhead"
+        name "skip_to_highlight"
+        starttick "1"
+        skiptotick "${preloadTick}"
+    }
+    "2"
+    {
+        factory "PlayCommands"
+        name "setup_recording"
+        starttick "${preloadTick}"
+        commands "exec ${cfgFileName}${specCmd ? `; ${specCmd}` : ''}"
+    }
+    "3"
+    {
+        factory "PlayCommands"
+        name "start_recording"
+        starttick "${startTick}"
+        commands "stopsound; ${specCmdWithSemi}echo === Recording started ===; mirv_streams record start"
+    }
+    "4"
+    {
+        factory "PlayCommands"
+        name "stop_recording"
+        starttick "${endTick}"
+        commands "echo === Recording ended ===; mirv_streams record end; wait 30; quit"
+    }
+}
+`;
+
+  return vdm;
+}
+
+/**
+ * Generates CFG content for recording a highlight
+ * These settings are applied only during recording and don't affect the user's normal config
+ */
+function generateRecordingCfg(options) {
+  const { highlight, clipFolder, clipName, settings } = options;
+  const { startTick, endTick } = highlight.playback;
+  
+  // Normalize path for CS:GO console (use forward slashes)
+  const normalizedClipFolder = clipFolder.replace(/\\/g, '/');
+  
+  // Calculate ticks - add small buffer before recording starts
+  const preloadTick = Math.max(0, startTick - 1280); // 10 seconds at 128 tick (allows announcer sounds to finish)
+  
+  // Convert Steam64 to account ID for spec_player_by_accountid
+  const accountId = steam64ToAccountId(highlight.player.steamId);
+  
+  // Build camera lock commands only if accountId is available
+  const cameraLockSection = accountId ? `
+// === LOCK CAMERA TO PLAYER ===
+// Player: ${highlight.player.name} (Steam64: ${highlight.player.steamId})
+spec_player_by_accountid ${accountId}
+spec_mode 4
+spec_lock 1
+` : `
+// === CAMERA (no steamId available, camera may switch) ===
+// Player: ${highlight.player.name}
+spec_mode 4
+`;
+
+  const cfg = `
+// ============================================
+// Auto-generated HLAE recording config
+// Clip: ${clipName}
+// Highlight: ${highlight.type} by ${highlight.player.name}
+// ============================================
+// These settings are temporary and only apply during this recording session.
+// Your normal CS:GO config is NOT modified.
+// ============================================
+${cameraLockSection}
+
+// === VIDEO SETTINGS ===
+host_framerate ${settings.framerate}
+mat_setvideomode ${settings.width} ${settings.height} 1
+fps_max 0
+fps_max_menu 0
+
+// === GRAPHICS QUALITY (for clean recording) ===
+mat_queue_mode 2
+r_dynamic 1
+r_drawtracers_firstperson 1
+muzzleflash_light 1
+mat_postprocess_enable 1
+mat_hdr_level 2
+
+// === HUD SETTINGS (movie style - only killfeed visible) ===
+cl_drawhud 1
+cl_draw_only_deathnotices 1
+cl_showfps 0
+net_graph 0
+cl_showpos 0
+cl_showloadout 0
+
+// === VIEWMODEL (show weapon) ===
+r_drawviewmodel 1
+cl_righthand 1
+
+// === DEMO PLAYBACK SETTINGS ===
+demo_debug 0
+cl_showevents 0
+
+// === SPECTATOR / X-RAY SETTINGS ===
+spec_show_xray 0
+cl_teamid_overhead_mode 0
+cl_spec_show_player_outline 0
+
+// === SOUND SETTINGS (for recording) ===
+volume 1
+snd_musicvolume 0
+snd_menumusic_volume 0
+snd_roundstart_volume 0
+snd_roundend_volume 0
+snd_mapobjective_volume 0
+snd_tensecondwarning_volume 0
+snd_deathcamera_volume 0
+snd_mvp_volume 0
+
+// === DISABLE ANNOUNCER AND VOICE ===
+// Mute "Terrorist wins", "Counter-terrorists win", etc.
+cl_autohelp 0
+gameinstructor_enable 0
+cl_disablefreezecam 1
+
+// === MIRV SOUND FILTER (block round announcer) ===
+// Filter out round win/lose announcements and music
+mirv_snd_filter clear
+mirv_snd_filter add block "*radio*"
+mirv_snd_filter add block "*terwin*"
+mirv_snd_filter add block "*ctwin*"
+mirv_snd_filter add block "*rounddraw*"
+mirv_snd_filter add block "*wonround*"
+mirv_snd_filter add block "*lostround*"
+mirv_snd_filter add block "*bombpl*"
+mirv_snd_filter add block "*bombdef*"
+mirv_snd_filter add block "*music*"
+mirv_snd_filter add block "*announcer*"
+
+// === DISABLE VOICE/RADIO (no voip, no radio commands) ===
+voice_enable 0
+snd_voipvolume 0
+cl_mute_all_but_friends_and_party 1
+ignorerad
+voice_scale 0
+
+// === KILLFEED SETTINGS ===
+// Killfeed duration - set very high so kills stay visible for entire clip
+hud_deathnotice_time 60
+
+// === MIRV DEATH MESSAGE SETTINGS ===
+// Filter to show only kills by the highlight player
+// Using XUID (Steam64) with 'x' prefix as per HLAE docs
+mirv_deathmsg filter clear
+mirv_deathmsg lifetime 60
+${highlight.player.steamId ? `mirv_deathmsg filter add block=1
+mirv_deathmsg filter add attackerMatch=x${highlight.player.steamId} block=0
+mirv_deathmsg localPlayer x${highlight.player.steamId}` : ''}
+
+// === MIRV STREAMS SETUP ===
+// Configure stream for high quality recording
+mirv_streams add normal norm
+mirv_streams edit norm record 1
+mirv_streams edit norm drawHud 1
+mirv_streams edit norm drawViewModel 1
+
+// Set recording output path
+mirv_streams record name "${normalizedClipFolder}"
+
+echo "=== Recording config loaded for ${clipName} ==="
+echo "=== VDM file will control playback and recording ==="
+`;
+
+  return cfg.trim();
+}
+
+/**
+ * Launches HLAE with CS:GO to record the highlight
+ */
+function launchHlaeRecording(options) {
+  const { hlaePath, csgoPath, demoPath, cfgFileName, highlight } = options;
+  
+  return new Promise((resolve, reject) => {
+    // Build HLAE launch arguments
+    // VDM file (same name as demo) will automatically load and control playback
+    // VDM handles: skip to tick, exec CFG, start/stop recording
+    const args = [
+      '-csgoLauncher',
+      '-noGui',
+      '-autoStart',
+      '-csgoExe', path.join(csgoPath, 'csgo.exe'),
+      '-gfxEnabled', 'true',
+      '-gfxWidth', String(DEFAULT_SETTINGS.width),
+      '-gfxHeight', String(DEFAULT_SETTINGS.height),
+      '-gfxFull', 'false',
+      '-customLaunchOptions', `-novid -console +playdemo "${demoPath}"`,
+    ];
+    
+    console.log(`    Waiting for CS:GO to record and quit...`);
+    
+    const hlaeProcess = spawn(hlaePath, args, {
+      stdio: 'pipe',
+      windowsHide: false,
+    });
+    
+    // Track process for cleanup on SIGINT
+    activeHlaeProcess = hlaeProcess;
+    
+    let output = '';
+    
+    hlaeProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    hlaeProcess.stderr.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    hlaeProcess.on('close', (code) => {
+      activeHlaeProcess = null;
+      clearTimeout(timeout);
+      if (code === 0 || code === null) {
+        resolve();
+      } else {
+        reject(new Error(`HLAE exited with code ${code}: ${output}`));
+      }
+    });
+    
+    hlaeProcess.on('error', (err) => {
+      activeHlaeProcess = null;
+      reject(new Error(`Failed to launch HLAE: ${err.message}`));
+    });
+    
+    // Set a timeout for recording (5 minutes max per clip)
+    const timeout = setTimeout(() => {
+      hlaeProcess.kill();
+      reject(new Error('Recording timeout exceeded (5 minutes)'));
+    }, 5 * 60 * 1000);
+  });
+}
+
+/**
+ * Encodes TGA image sequence to MP4 using FFmpeg
+ */
+function encodeTgaToMp4(options) {
+  const { inputFolder, clipName, outputPath, framerate, crf, preset } = options;
+  
+  return new Promise((resolve, reject) => {
+    // HLAE creates structure: clipFolder/take0000/norm/%05d.tga
+    // Find the take folder first (take0000, take0001, etc.)
+    const takeFolders = fs.readdirSync(inputFolder).filter(f => {
+      const fullPath = path.join(inputFolder, f);
+      return fs.statSync(fullPath).isDirectory() && f.startsWith('take');
+    }).sort(); // Sort to get take0000 first
+    
+    if (takeFolders.length === 0) {
+      reject(new Error(`No take folders found in ${inputFolder}`));
+      return;
+    }
+    
+    // Use the first take folder
+    const takeFolder = path.join(inputFolder, takeFolders[0]);
+    
+    // Find the stream folder inside the take folder (e.g., 'norm')
+    const streamFolders = fs.readdirSync(takeFolder).filter(f => {
+      const fullPath = path.join(takeFolder, f);
+      return fs.statSync(fullPath).isDirectory();
+    });
+    
+    if (streamFolders.length === 0) {
+      reject(new Error(`No stream folders found in ${takeFolder}`));
+      return;
+    }
+    
+    // Use the first stream folder (usually 'norm')
+    const streamFolder = path.join(takeFolder, streamFolders[0]);
+    
+    // Detect TGA naming pattern (HLAE uses %05d.tga)
+    const tgaFiles = fs.readdirSync(streamFolder).filter(f => f.endsWith('.tga')).sort();
+    if (tgaFiles.length === 0) {
+      reject(new Error(`No TGA files found in ${streamFolder}`));
+      return;
+    }
+    
+    // Determine pattern from first file (e.g., "00000.tga" -> "%05d.tga")
+    const firstFile = tgaFiles[0];
+    const numDigits = firstFile.replace('.tga', '').length;
+    const tgaPattern = `%0${numDigits}d.tga`;
+    
+    // Build FFmpeg command with high quality settings
+    const args = [
+      '-framerate', String(framerate),
+      '-i', path.join(streamFolder, tgaPattern),
+      '-c:v', 'libx264',
+      '-preset', preset,
+      '-crf', String(crf),
+      '-pix_fmt', 'yuv420p',
+      '-y',
+      outputPath,
+    ];
+    
+    // Check for audio file in take folder (HLAE puts audio.wav there)
+    const audioFile = path.join(takeFolder, 'audio.wav');
+    if (fs.existsSync(audioFile)) {
+      args.splice(4, 0, '-i', audioFile, '-c:a', 'aac', '-b:a', '320k');
+    }
+    
+    console.log(`  Encoding ${clipName} to MP4...`);
+    
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    // Track process for cleanup on SIGINT
+    activeFfmpegProcess = ffmpeg;
+    
+    let errorOutput = '';
+    
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      activeFfmpegProcess = null;
+      if (code === 0) {
+        resolve(outputPath);
+      } else {
+        reject(new Error(`FFmpeg encoding failed: ${errorOutput}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      activeFfmpegProcess = null;
+      reject(new Error(`Failed to run FFmpeg: ${err.message}. Make sure FFmpeg is installed and in PATH.`));
+    });
+  });
+}
+
+/**
+ * Cleans up TGA/WAV files after encoding
+ */
+function cleanupTgaFiles(folder) {
+  try {
+    fs.rmSync(folder, { recursive: true, force: true });
+  } catch (err) {
+    console.warn(`  Warning: Could not clean up ${folder}: ${err.message}`);
+  }
+}
+
+/**
+ * Records all highlights from a highlights.json file
+ * @param {Object} options Recording options
+ * @param {Object} options.highlightsData Parsed highlights.json data
+ * @param {string} options.demosPath Path to demos folder
+ * @param {string} options.hlaePath Path to HLAE executable
+ * @param {string} options.csgoPath Path to CS:GO installation
+ * @param {string} options.outputPath Output folder
+ * @param {string} [options.playerFilter] Optional Steam ID to filter by player
+ * @returns {Promise<string[]>} Array of recorded clip paths
+ */
+async function recordAllHighlights(options) {
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter } = options;
+  
+  const recordedClips = [];
+  let clipIndex = 0;
+  
+  // Collect all highlights across all demos
+  const allHighlights = [];
+  for (const demo of highlightsData.demos) {
+    for (const highlight of demo.highlights) {
+      // Apply player filter if specified
+      if (playerFilter && highlight.player.steamId !== playerFilter) {
+        continue;
+      }
+      
+      allHighlights.push({
+        ...highlight,
+        demoFile: demo.file,
+        tickRate: demo.tickRate,
+      });
+    }
+  }
+  
+  console.log(`\nRecording ${allHighlights.length} highlights...\n`);
+  
+  for (const highlight of allHighlights) {
+    clipIndex++;
+    
+    const demoPath = path.join(demosPath, highlight.demoFile);
+    
+    // Verify demo file exists
+    if (!fs.existsSync(demoPath)) {
+      console.warn(`  Warning: Demo file not found: ${highlight.demoFile}, skipping...`);
+      continue;
+    }
+    
+    // Show detailed info about current highlight
+    console.log(`  [${clipIndex}/${allHighlights.length}] ${highlight.type} by ${highlight.player.name}`);
+    console.log(`    Demo: ${highlight.demoFile}`);
+    console.log(`    Duration: ${highlight.playback.durationSeconds}s (ticks ${highlight.playback.startTick}-${highlight.playback.endTick})`);
+    
+    try {
+      const clipPath = await recordHighlight({
+        hlaePath,
+        csgoPath,
+        demoPath,
+        highlight,
+        outputPath,
+        clipIndex,
+      });
+      
+      recordedClips.push(clipPath);
+      console.log(`    SUCCESS: ${path.basename(clipPath)}\n`);
+    } catch (err) {
+      console.error(`    FAILED: ${err.message}\n`);
+    }
+  }
+  
+  return recordedClips;
+}
+
+module.exports = {
+  recordHighlight,
+  recordAllHighlights,
+  DEFAULT_SETTINGS,
+};

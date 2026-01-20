@@ -6,3 +6,4 @@ output/
 demos/
 unused_demos/
 .npm-cache/
+PRIVATE_README.md
