@@ -182,6 +182,7 @@ function detectKillSeries(kills, maxDelayTicks, minSeriesKills, killPoints = KIL
             weapon: k.weapon,
             headshot: k.headshot,
             noscope: k.noscope || false,
+            firstShotTick: k.firstShotTick || null, // When player started shooting
           }));
           
           // Kill series priority (knife-containing series keep same priority as regular series)
@@ -329,8 +330,8 @@ function detectClutches(rounds, minEnemies, priorities = PRIORITIES) {
     if (clutchSituation.enemies < minEnemies) continue;
     
     // Require at least 1 kill by the clutch player
-    const killTicks = clutchSituation.killTicks || [];
-    if (killTicks.length < 1) continue;
+    const kills = clutchSituation.kills || [];
+    if (kills.length < 1) continue;
     
     // Points for clutch based on difficulty (enemies * 10)
     const points = clutchSituation.enemies * 10;
@@ -344,7 +345,7 @@ function detectClutches(rounds, minEnemies, priorities = PRIORITIES) {
       startTick: clutchSituation.startTick,
       endTick: endTick,
       points,
-      killTicks, // Array of kill ticks for speed-up segments
+      kills, // Array of kills with tick, weapon, headshot, noscope
     });
   }
 

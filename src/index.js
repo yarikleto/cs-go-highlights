@@ -20,6 +20,7 @@ const DEFAULT_CONFIG = {
   
   // Speed-up settings for clutches (in seconds)
   speedup: {
+    startDelay: 2,          // seconds after highlight start before speedup can begin
     bufferAroundKills: 2,   // seconds to keep at normal speed before/after each kill
     minGapDuration: 4,      // minimum gap duration (seconds) to trigger speed-up
   },
@@ -248,45 +249,60 @@ async function analyzeCommand(options) {
         // Calculate total playback duration
         const playbackDurationSeconds = (playbackEndTick - playbackStartTick) / tickRate;
         
-        // Calculate speed-up segments for clutches and kill-series (gaps between kills)
+        // Calculate speed-up segments for clutches and kill-series (gaps between action)
         let speedupSegments = null;
-        let killTicks = null;
         
-        // Get kill ticks based on highlight type
-        if (h.type === 'clutch' && h.killTicks && h.killTicks.length > 0) {
-          killTicks = h.killTicks;
-        } else if (h.type === 'kill-series' && h.kills && h.kills.length > 0) {
-          killTicks = h.kills.map(k => k.tick);
-        }
-        
-        if (killTicks && killTicks.length > 0) {
+        // Get kills with timing info (both clutches and kill-series now have kills array)
+        if ((h.type === 'clutch' || h.type === 'kill-series') && h.kills && h.kills.length > 0) {
+          const startDelaySeconds = DEFAULT_CONFIG.speedup.startDelay;
           const bufferSeconds = DEFAULT_CONFIG.speedup.bufferAroundKills;
           const minGapSeconds = DEFAULT_CONFIG.speedup.minGapDuration;
+          const startDelayTicks = Math.round(startDelaySeconds * tickRate);
           const bufferTicks = Math.round(bufferSeconds * tickRate);
           const minGapTicks = Math.round(minGapSeconds * tickRate);
           speedupSegments = [];
           
-          // All important ticks: playback start, each kill, playback end
-          const importantTicks = [
-            playbackStartTick,
-            ...killTicks,
-            playbackEndTick,
-          ];
+          // Build list of "action points" - when to stop speedup
+          // Use firstShotTick if available (when shooting started), otherwise use kill tick
+          const actionPoints = h.kills.map(k => {
+            // Use firstShotTick if available and reasonable, otherwise fall back to kill tick with buffer
+            const shootingStart = k.firstShotTick || (k.tick - bufferTicks);
+            return {
+              startAction: shootingStart - bufferTicks, // Stop speedup before shooting starts
+              endAction: k.tick + bufferTicks,          // Resume speedup after kill
+            };
+          });
           
-          // Find gaps between important moments
-          for (let i = 0; i < importantTicks.length - 1; i++) {
-            const segmentStart = importantTicks[i] + bufferTicks;
-            const segmentEnd = importantTicks[i + 1] - bufferTicks;
+          // Find gaps between action moments
+          // Speedup can only start after startDelay from highlight beginning
+          let currentPos = playbackStartTick + startDelayTicks;
+          
+          for (const action of actionPoints) {
+            // Speedup segment: from current position to before action starts
+            const segmentEnd = action.startAction;
             
-            // Only add if gap exceeds minimum duration
-            if (segmentEnd - segmentStart >= minGapTicks) {
+            // Only create segment if it's after the start delay and long enough
+            if (segmentEnd > currentPos && segmentEnd - currentPos >= minGapTicks) {
               speedupSegments.push({
-                startTick: segmentStart,
+                startTick: currentPos,
                 endTick: segmentEnd,
-                durationTicks: segmentEnd - segmentStart,
-                durationSeconds: Math.round((segmentEnd - segmentStart) / tickRate * 100) / 100,
+                durationTicks: segmentEnd - currentPos,
+                durationSeconds: Math.round((segmentEnd - currentPos) / tickRate * 100) / 100,
               });
             }
+            
+            // Move position to after this kill (but not before the start delay point)
+            currentPos = Math.max(action.endAction, playbackStartTick + startDelayTicks);
+          }
+          
+          // Final segment: from last kill to end
+          if (playbackEndTick - currentPos >= minGapTicks) {
+            speedupSegments.push({
+              startTick: currentPos,
+              endTick: playbackEndTick,
+              durationTicks: playbackEndTick - currentPos,
+              durationSeconds: Math.round((playbackEndTick - currentPos) / tickRate * 100) / 100,
+            });
           }
           
           // If no meaningful gaps, set to null
@@ -297,8 +313,9 @@ async function analyzeCommand(options) {
         
         // Detect slow motion moment: last kill if headshot or noscope sniper
         // Impact style: instant slowdown at kill, then gradual ramp back to normal
+        // Works for both kill-series and clutches
         let slowmotion = null;
-        if (h.type === 'kill-series' && h.kills && h.kills.length > 0) {
+        if ((h.type === 'kill-series' || h.type === 'clutch') && h.kills && h.kills.length > 0) {
           const lastKill = h.kills[h.kills.length - 1];
           const qualifiesForSlowmo = lastKill.headshot === true || lastKill.noscope === true;
           

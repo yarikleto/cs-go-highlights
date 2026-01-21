@@ -117,6 +117,10 @@ function parseDemo(filePath) {
     // Track alive players per team for clutch detection
     let aliveCT = 0;
     let aliveT = 0;
+    
+    // Track recent shots by player (steamId -> array of shot ticks)
+    // Used to find when player started shooting before a kill
+    const recentShotsByPlayer = new Map();
 
     demoFile.on('start', () => {
       // Calculate tick rate from header
@@ -182,6 +186,29 @@ function parseDemo(filePath) {
       // Additional cleanup if needed
     });
 
+    // Track weapon fire events to know when player started shooting
+    demoFile.gameEvents.on('weapon_fire', (e) => {
+      const shooter = demoFile.entities.getByUserId(e.userid);
+      if (!shooter) return;
+      
+      const steamId = shooter.steam64Id?.toString();
+      if (!steamId) return;
+      
+      // Store shot tick
+      if (!recentShotsByPlayer.has(steamId)) {
+        recentShotsByPlayer.set(steamId, []);
+      }
+      
+      const shots = recentShotsByPlayer.get(steamId);
+      shots.push(demoFile.currentTick);
+      
+      // Keep only shots from last ~15 seconds (to avoid memory issues)
+      const maxAge = tickRate * 15;
+      while (shots.length > 0 && shots[0] < demoFile.currentTick - maxAge) {
+        shots.shift();
+      }
+    });
+
     // Player death
     demoFile.gameEvents.on('player_death', (e) => {
       const attacker = demoFile.entities.getByUserId(e.attacker);
@@ -198,11 +225,28 @@ function parseDemo(filePath) {
 
       const weaponCategory = getWeaponCategory(e.weapon);
       
+      // Find the first shot before this kill (within short window)
+      // Only look at shots close to the kill - we don't want random misses from earlier
+      const attackerSteamId = attacker.steam64Id?.toString() || null;
+      let firstShotTick = null;
+      if (attackerSteamId && recentShotsByPlayer.has(attackerSteamId)) {
+        const shots = recentShotsByPlayer.get(attackerSteamId);
+        const currentTick = demoFile.currentTick;
+        const maxLookback = tickRate * 3; // Only look back 3 seconds (direct engagement)
+        
+        // Find the earliest shot within the short window
+        for (let i = shots.length - 1; i >= 0; i--) {
+          const shotTick = shots[i];
+          if (currentTick - shotTick > maxLookback) break;
+          firstShotTick = shotTick; // Keep going back to find the earliest
+        }
+      }
+      
       const kill = {
         tick: demoFile.currentTick,
         attacker: {
           name: attacker.name,
-          steamId: attacker.steam64Id?.toString() || null,
+          steamId: attackerSteamId,
           team: attacker.teamNumber,
         },
         victim: {
@@ -217,6 +261,7 @@ function parseDemo(filePath) {
         isKnife: weaponCategory === 'knife',
         isHeadshotSeriesWeapon: isHeadshotSeriesWeapon(e.weapon),
         round: rounds.length + 1,
+        firstShotTick, // When player started shooting (for speedup timing)
       };
 
       kills.push(kill);
@@ -228,9 +273,15 @@ function parseDemo(filePath) {
       // Track kills by clutch player (if clutch situation exists)
       if (currentRound && currentRound.clutchSituation) {
         const clutchPlayerSteamId = currentRound.clutchSituation.player.steamId;
-        const attackerSteamId = attacker.steam64Id?.toString() || null;
         if (clutchPlayerSteamId && attackerSteamId && clutchPlayerSteamId === attackerSteamId) {
-          currentRound.clutchSituation.killTicks.push(demoFile.currentTick);
+          // Store full kill info for slowmo and speedup detection
+          currentRound.clutchSituation.kills.push({
+            tick: demoFile.currentTick,
+            weapon: e.weapon,
+            headshot: e.headshot,
+            noscope: e.noscope || false,
+            firstShotTick, // When player started shooting
+          });
         }
       }
 
@@ -248,7 +299,7 @@ function parseDemo(filePath) {
               team: 3,
               enemies: aliveT,
               startTick: demoFile.currentTick,
-              killTicks: [], // Track kill ticks by clutch player
+              kills: [], // Track kills by clutch player (with weapon, headshot, noscope)
             };
           }
         } else if (aliveT === 1 && aliveCT >= 2) {
@@ -263,7 +314,7 @@ function parseDemo(filePath) {
               team: 2,
               enemies: aliveCT,
               startTick: demoFile.currentTick,
-              killTicks: [], // Track kill ticks by clutch player
+              kills: [], // Track kills by clutch player (with weapon, headshot, noscope)
             };
           }
         }

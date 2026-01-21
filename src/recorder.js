@@ -171,6 +171,8 @@ async function recordHighlight(options) {
     });
   }
   console.log(`    [3/4] Launching HLAE + CS:GO... (estimated clip: ${highlight.playback.durationSeconds}s)`);
+  console.log(`    Demo path: ${demoPath}`);
+  console.log(`    VDM path: ${vdmPath}`);
   
   // Register cleanup callbacks for SIGINT handling
   const cleanupTempFiles = () => {
@@ -223,55 +225,22 @@ async function recordHighlight(options) {
   // Clean up TGA/WAV files
   cleanupTgaFiles(clipFolder);
   
-  // Apply speedup to clutch gaps if enabled
+  // Track current step for progress display
+  let currentStep = 5;
   const speedupSegments = highlight.playback.speedupSegments;
-  if (speedupMultiplier && speedupSegments && speedupSegments.length > 0) {
-    console.log(`    [5/5] Applying ${speedupMultiplier}x speedup to ${speedupSegments.length} segment(s)...`);
-    
-    // Convert tick-based segments to time-based (relative to playback start)
-    const tickRate = highlight.tickRate || 128;
-    const playbackStartTick = highlight.playback.startTick;
-    
-    const timeSegments = speedupSegments.map(seg => ({
-      startTime: (seg.startTick - playbackStartTick) / tickRate,
-      endTime: (seg.endTick - playbackStartTick) / tickRate,
-      durationSeconds: seg.durationSeconds,
-    }));
-    
-    await applySpeedupToVideo({
-      inputPath: clipOutputPath,
-      segments: timeSegments,
-      speedMultiplier: speedupMultiplier,
-      crf: DEFAULT_SETTINGS.crf,
-    });
-    
-    console.log(`    [5/5] Speedup applied successfully`);
-  }
-  
-  // Apply overlay if enabled
-  if (showOverlay) {
-    const stepNum = speedupMultiplier && speedupSegments && speedupSegments.length > 0 ? 6 : 5;
-    console.log(`    [${stepNum}/${stepNum}] Adding player overlay...`);
-    
-    await applyOverlayToVideo({
-      inputPath: clipOutputPath,
-      playerName: highlight.player.name,
-      highlightType: formatHighlightType(highlight),
-      crf: DEFAULT_SETTINGS.crf,
-    });
-    
-    console.log(`    [${stepNum}/${stepNum}] Overlay applied successfully`);
-  }
-  
-  // Apply slow motion if enabled and highlight has a qualifying kill
   const slowmotion = highlight.playback.slowmotion;
-  if (slowmoFactor && slowmotion) {
-    // Calculate step number based on previous steps
-    let stepNum = 5;
-    if (speedupMultiplier && speedupSegments && speedupSegments.length > 0) stepNum++;
-    if (showOverlay) stepNum++;
-    
-    console.log(`    [${stepNum}/${stepNum}] Applying slow motion (${slowmoFactor}x at ${slowmotion.reason})...`);
+  const hasSpeedup = speedupMultiplier && speedupSegments && speedupSegments.length > 0;
+  const hasSlowmo = slowmoFactor && slowmotion;
+  
+  // Calculate total steps
+  let totalSteps = 4; // Base steps (1-4 for recording/encoding)
+  if (hasSlowmo) totalSteps++;
+  if (hasSpeedup) totalSteps++;
+  if (showOverlay) totalSteps++;
+  
+  // IMPORTANT: Apply slowmo FIRST (before speedup changes timings)
+  if (hasSlowmo) {
+    console.log(`    [${currentStep}/${totalSteps}] Applying slow motion (${slowmoFactor}x at ${slowmotion.reason})...`);
     
     // Convert tick-based timing to seconds (relative to playback start)
     const tickRate = highlight.tickRate || 128;
@@ -292,7 +261,67 @@ async function recordHighlight(options) {
       crf: DEFAULT_SETTINGS.crf,
     });
     
-    console.log(`    [${stepNum}/${stepNum}] Slow motion applied successfully`);
+    console.log(`    [${currentStep}/${totalSteps}] Slow motion applied successfully`);
+    currentStep++;
+  }
+  
+  // Apply speedup AFTER slowmo (speedup changes video duration/timings)
+  if (hasSpeedup) {
+    console.log(`    [${currentStep}/${totalSteps}] Applying ${speedupMultiplier}x speedup to ${speedupSegments.length} segment(s)...`);
+    
+    // Convert tick-based segments to time-based (relative to playback start)
+    const tickRate = highlight.tickRate || 128;
+    const playbackStartTick = highlight.playback.startTick;
+    
+    // If slowmo was applied, we need to adjust speedup timings
+    // Slowmo expands the video at slowmotion.startTick
+    let timeOffset = 0;
+    if (hasSlowmo) {
+      const slowmoOriginalDuration = (slowmotion.endTick - slowmotion.startTick) / tickRate;
+      const slowmoExpandedDuration = slowmoOriginalDuration / slowmoFactor;
+      timeOffset = slowmoExpandedDuration - slowmoOriginalDuration;
+    }
+    
+    const timeSegments = speedupSegments.map(seg => {
+      let startTime = (seg.startTick - playbackStartTick) / tickRate;
+      let endTime = (seg.endTick - playbackStartTick) / tickRate;
+      
+      // Adjust timings if speedup segment is after slowmo
+      if (hasSlowmo && seg.startTick > slowmotion.endTick) {
+        startTime += timeOffset;
+        endTime += timeOffset;
+      }
+      
+      return {
+        startTime,
+        endTime,
+        durationSeconds: seg.durationSeconds,
+      };
+    });
+    
+    await applySpeedupToVideo({
+      inputPath: clipOutputPath,
+      segments: timeSegments,
+      speedMultiplier: speedupMultiplier,
+      crf: DEFAULT_SETTINGS.crf,
+    });
+    
+    console.log(`    [${currentStep}/${totalSteps}] Speedup applied successfully`);
+    currentStep++;
+  }
+  
+  // Apply overlay LAST (after all timing changes)
+  if (showOverlay) {
+    console.log(`    [${currentStep}/${totalSteps}] Adding player overlay...`);
+    
+    await applyOverlayToVideo({
+      inputPath: clipOutputPath,
+      playerName: highlight.player.name,
+      highlightType: formatHighlightType(highlight),
+      crf: DEFAULT_SETTINGS.crf,
+    });
+    
+    console.log(`    [${currentStep}/${totalSteps}] Overlay applied successfully`);
   }
   
   return clipOutputPath;
@@ -321,9 +350,10 @@ function formatHighlightType(highlight) {
       return highlight.situation ? highlight.situation.toUpperCase() + ' CLUTCH' : 'CLUTCH';
     case 'kill-series':
       if (highlight.killCount === 5) return 'ACE';
-      if (highlight.killCount === 4) return '4K';
-      if (highlight.killCount === 3) return '3K';
-      return `${highlight.killCount}K`;
+      if (highlight.killCount === 4) return 'QUAD KILL';
+      if (highlight.killCount === 3) return 'TRIPLE KILL';
+      if (highlight.killCount === 2) return 'DOUBLE KILL';
+      return `${highlight.killCount} KILLS`;
     case 'knife':
       return 'KNIFE KILL';
     case 'collateral':
@@ -885,7 +915,8 @@ function launchHlaeRecording(options) {
       '-gfxWidth', String(DEFAULT_SETTINGS.width),
       '-gfxHeight', String(DEFAULT_SETTINGS.height),
       '-gfxFull', 'false',
-      '-customLaunchOptions', `-novid -console +playdemo "${demoPath}"`,
+      // Use forward slashes for CS:GO console compatibility
+      '-customLaunchOptions', `-novid -console +playdemo "${demoPath.replace(/\\/g, '/')}"`,
     ];
     
     console.log(`    Waiting for CS:GO to record and quit...`);
@@ -1276,7 +1307,33 @@ async function recordAllHighlights(options) {
   const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, speedupMultiplier, showOverlay, slowmoFactor } = options;
   
   const recordedClips = [];
-  let clipIndex = 0;
+  const clipsFolder = path.join(outputPath, 'clips');
+  
+  // Scan existing clips to find already recorded highlight IDs and highest clip index
+  const existingClipIds = new Set();
+  let lastClipIndex = 0;
+  
+  if (fs.existsSync(clipsFolder)) {
+    const existingFiles = fs.readdirSync(clipsFolder).filter(f => f.endsWith('.mp4'));
+    for (const file of existingFiles) {
+      // Parse filename format: {index}-{mapname}-{highlightId}.mp4
+      const match = file.match(/^(\d+)-[^-]+-([a-f0-9]+)\.mp4$/);
+      if (match) {
+        const index = parseInt(match[1], 10);
+        const highlightId = match[2];
+        existingClipIds.add(highlightId);
+        if (index > lastClipIndex) {
+          lastClipIndex = index;
+        }
+      }
+    }
+  }
+  
+  if (existingClipIds.size > 0) {
+    console.log(`\nFound ${existingClipIds.size} existing clips (last index: ${lastClipIndex})`);
+  }
+  
+  let clipIndex = lastClipIndex;
   
   // Collect all highlights across all demos
   const allHighlights = [];
@@ -1298,9 +1355,18 @@ async function recordAllHighlights(options) {
     }
   }
   
-  console.log(`\nRecording ${allHighlights.length} highlights...\n`);
+  // Filter out already recorded highlights
+  const toRecord = allHighlights.filter(h => !existingClipIds.has(h.id));
+  const skipped = allHighlights.length - toRecord.length;
   
-  for (const highlight of allHighlights) {
+  if (skipped > 0) {
+    console.log(`Skipping ${skipped} already recorded highlights`);
+  }
+  
+  console.log(`\nRecording ${toRecord.length} highlights...\n`);
+  
+  for (let i = 0; i < toRecord.length; i++) {
+    const highlight = toRecord[i];
     clipIndex++;
     
     const demoPath = path.join(demosPath, highlight.demoFile);
@@ -1312,7 +1378,7 @@ async function recordAllHighlights(options) {
     }
     
     // Show detailed info about current highlight
-    console.log(`  [${clipIndex}/${allHighlights.length}] ${highlight.type} by ${highlight.player.name}`);
+    console.log(`  [${i + 1}/${toRecord.length}] ${highlight.type} by ${highlight.player.name}`);
     console.log(`    Demo: ${highlight.demoFile}`);
     console.log(`    Duration: ${highlight.playback.durationSeconds}s (ticks ${highlight.playback.startTick}-${highlight.playback.endTick})`);
     
