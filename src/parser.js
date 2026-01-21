@@ -230,7 +230,7 @@ function parseDemo(filePath) {
         const clutchPlayerSteamId = currentRound.clutchSituation.player.steamId;
         const attackerSteamId = attacker.steam64Id?.toString() || null;
         if (clutchPlayerSteamId && attackerSteamId && clutchPlayerSteamId === attackerSteamId) {
-          currentRound.clutchSituation.kills++;
+          currentRound.clutchSituation.killTicks.push(demoFile.currentTick);
         }
       }
 
@@ -248,7 +248,7 @@ function parseDemo(filePath) {
               team: 3,
               enemies: aliveT,
               startTick: demoFile.currentTick,
-              kills: 0, // Track kills by clutch player
+              killTicks: [], // Track kill ticks by clutch player
             };
           }
         } else if (aliveT === 1 && aliveCT >= 2) {
@@ -263,7 +263,7 @@ function parseDemo(filePath) {
               team: 2,
               enemies: aliveCT,
               startTick: demoFile.currentTick,
-              kills: 0, // Track kills by clutch player
+              killTicks: [], // Track kill ticks by clutch player
             };
           }
         }

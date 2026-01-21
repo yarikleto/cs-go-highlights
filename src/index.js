@@ -18,6 +18,12 @@ const DEFAULT_CONFIG = {
     after: 3,   // seconds after highlight ends
   },
   
+  // Speed-up settings for clutches (in seconds)
+  speedup: {
+    bufferAroundKills: 2,   // seconds to keep at normal speed before/after each kill
+    minGapDuration: 4,      // minimum gap duration (seconds) to trigger speed-up
+  },
+  
   // Detection settings
   detection: {
     maxDelay: 15,           // seconds between kills for series
@@ -72,6 +78,7 @@ program
   .option('--output <path>', 'Output folder for clips', './output')
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
+  .option('--speedup <multiplier>', 'Speed up clutch gaps (e.g., 4 for 4x speed)', parseFloat)
   .action(recordCommand);
 
 // Merge command - merge recorded clips into a single video
@@ -229,6 +236,44 @@ async function analyzeCommand(options) {
         // Calculate total playback duration
         const playbackDurationSeconds = (playbackEndTick - playbackStartTick) / tickRate;
         
+        // Calculate speed-up segments for clutches (gaps between kills)
+        let speedupSegments = null;
+        if (h.type === 'clutch' && h.killTicks && h.killTicks.length > 0) {
+          const bufferSeconds = DEFAULT_CONFIG.speedup.bufferAroundKills;
+          const minGapSeconds = DEFAULT_CONFIG.speedup.minGapDuration;
+          const bufferTicks = Math.round(bufferSeconds * tickRate);
+          const minGapTicks = Math.round(minGapSeconds * tickRate);
+          speedupSegments = [];
+          
+          // All important ticks: playback start, each kill, playback end
+          const importantTicks = [
+            playbackStartTick,
+            ...h.killTicks,
+            playbackEndTick,
+          ];
+          
+          // Find gaps between important moments
+          for (let i = 0; i < importantTicks.length - 1; i++) {
+            const segmentStart = importantTicks[i] + bufferTicks;
+            const segmentEnd = importantTicks[i + 1] - bufferTicks;
+            
+            // Only add if gap exceeds minimum duration
+            if (segmentEnd - segmentStart >= minGapTicks) {
+              speedupSegments.push({
+                startTick: segmentStart,
+                endTick: segmentEnd,
+                durationTicks: segmentEnd - segmentStart,
+                durationSeconds: Math.round((segmentEnd - segmentStart) / tickRate * 100) / 100,
+              });
+            }
+          }
+          
+          // If no meaningful gaps, set to null
+          if (speedupSegments.length === 0) {
+            speedupSegments = null;
+          }
+        }
+        
         return {
           id,
           ...h,
@@ -240,6 +285,7 @@ async function analyzeCommand(options) {
             durationSeconds: Math.round(playbackDurationSeconds * 100) / 100,
             paddingBefore: paddingBefore,
             paddingAfter: paddingAfter,
+            speedupSegments, // Segments to speed up for clutches
           },
         };
       });
@@ -286,6 +332,7 @@ async function recordCommand(options) {
   const outputPath = path.resolve(options.output);
   const playerFilter = options.player || null;
   const idFilter = options.id || null;
+  const speedupMultiplier = options.speedup || null;
 
   // Validate highlights.json exists
   if (!fs.existsSync(highlightsPath)) {
@@ -358,6 +405,9 @@ async function recordCommand(options) {
   if (idFilter) {
     console.log(`Filtering by ID: ${idFilter}`);
   }
+  if (speedupMultiplier) {
+    console.log(`Speed-up multiplier: ${speedupMultiplier}x for clutch gaps`);
+  }
 
   // Ensure output directory exists
   if (!fs.existsSync(outputPath)) {
@@ -374,6 +424,7 @@ async function recordCommand(options) {
       outputPath,
       playerFilter,
       idFilter,
+      speedupMultiplier,
     });
 
     if (recordedClips.length === 0) {

@@ -91,10 +91,11 @@ const DEFAULT_SETTINGS = {
  * @param {Object} options.highlight Highlight object from highlights.json
  * @param {string} options.outputPath Output folder for clips
  * @param {number} options.clipIndex Index of this clip (for naming)
+ * @param {number} [options.speedupMultiplier] Optional speed multiplier for clutch gaps
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, speedupMultiplier } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -142,6 +143,7 @@ async function recordHighlight(options) {
     highlight,
     clipFolder,
     cfgFileName,
+    speedupMultiplier,
   });
   
   // VDM path: same as demo but with .vdm extension
@@ -155,7 +157,18 @@ async function recordHighlight(options) {
   
   // Write VDM file
   fs.writeFileSync(vdmPath, vdmContent);
-  console.log(`    [2/4] VDM file created (skip to tick ${highlight.playback.startTick - 128}, record ${highlight.playback.startTick}-${highlight.playback.endTick})`);
+  const speedupInfo = speedupMultiplier && highlight.playback.speedupSegments 
+    ? `, ${highlight.playback.speedupSegments.length} speedup segment(s) at ${speedupMultiplier}x`
+    : '';
+  console.log(`    [2/4] VDM file created (skip to tick ${highlight.playback.startTick - 128}, record ${highlight.playback.startTick}-${highlight.playback.endTick}${speedupInfo})`);
+  
+  // Debug: Print speedup segment details
+  if (speedupMultiplier && highlight.playback.speedupSegments) {
+    console.log(`    Speedup segments:`);
+    highlight.playback.speedupSegments.forEach((seg, i) => {
+      console.log(`      ${i + 1}. Ticks ${seg.startTick}-${seg.endTick} (${seg.durationSeconds}s at ${speedupMultiplier}x)`);
+    });
+  }
   console.log(`    [3/4] Launching HLAE + CS:GO... (estimated clip: ${highlight.playback.durationSeconds}s)`);
   
   // Register cleanup callbacks for SIGINT handling
@@ -209,6 +222,31 @@ async function recordHighlight(options) {
   // Clean up TGA/WAV files
   cleanupTgaFiles(clipFolder);
   
+  // Apply speedup to clutch gaps if enabled
+  const speedupSegments = highlight.playback.speedupSegments;
+  if (speedupMultiplier && speedupSegments && speedupSegments.length > 0) {
+    console.log(`    [5/5] Applying ${speedupMultiplier}x speedup to ${speedupSegments.length} segment(s)...`);
+    
+    // Convert tick-based segments to time-based (relative to playback start)
+    const tickRate = highlight.tickRate || 128;
+    const playbackStartTick = highlight.playback.startTick;
+    
+    const timeSegments = speedupSegments.map(seg => ({
+      startTime: (seg.startTick - playbackStartTick) / tickRate,
+      endTime: (seg.endTick - playbackStartTick) / tickRate,
+      durationSeconds: seg.durationSeconds,
+    }));
+    
+    await applySpeedupToVideo({
+      inputPath: clipOutputPath,
+      segments: timeSegments,
+      speedMultiplier: speedupMultiplier,
+      crf: DEFAULT_SETTINGS.crf,
+    });
+    
+    console.log(`    [5/5] Speedup applied successfully`);
+  }
+  
   return clipOutputPath;
 }
 
@@ -231,8 +269,8 @@ function steam64ToAccountId(steam64) {
  * VDM files are the Source engine's native way to control demo playback
  */
 function generateVdmFile(options) {
-  const { highlight, clipFolder, cfgFileName } = options;
-  const { startTick, endTick } = highlight.playback;
+  const { highlight, clipFolder, cfgFileName, speedupMultiplier } = options;
+  const { startTick, endTick, speedupSegments } = highlight.playback;
   
   // Normalize path for CS:GO console (use forward slashes)
   const normalizedClipFolder = clipFolder.replace(/\\/g, '/');
@@ -247,40 +285,58 @@ function generateVdmFile(options) {
   const specCmd = accountId ? `spec_player_by_accountid ${accountId}; spec_mode 4` : '';
   const specCmdWithSemi = specCmd ? `${specCmd}; ` : '';
   
-  // VDM file format - Valve Demo Manager
-  // SkipAhead: jumps to a specific tick
-  // PlayCommands: executes console commands at a specific tick
-  const vdm = `demoactions
-{
-    "1"
+  // Build VDM actions array
+  let actionIndex = 1;
+  let vdmActions = '';
+  
+  // Action 1: Skip to preload tick
+  vdmActions += `    "${actionIndex}"
     {
         factory "SkipAhead"
         name "skip_to_highlight"
         starttick "1"
         skiptotick "${preloadTick}"
     }
-    "2"
+`;
+  actionIndex++;
+  
+  // Action 2: Setup recording
+  vdmActions += `    "${actionIndex}"
     {
         factory "PlayCommands"
         name "setup_recording"
         starttick "${preloadTick}"
         commands "exec ${cfgFileName}${specCmd ? `; ${specCmd}` : ''}"
     }
-    "3"
+`;
+  actionIndex++;
+  
+  // Action 3: Start recording
+  vdmActions += `    "${actionIndex}"
     {
         factory "PlayCommands"
         name "start_recording"
         starttick "${startTick}"
         commands "stopsound; ${specCmdWithSemi}echo === Recording started ===; mirv_streams record start"
     }
-    "4"
+`;
+  actionIndex++;
+  
+  // Note: Speedup is now handled via FFmpeg post-processing, not host_timescale
+  
+  // Final action: Stop recording
+  vdmActions += `    "${actionIndex}"
     {
         factory "PlayCommands"
         name "stop_recording"
         starttick "${endTick}"
         commands "echo === Recording ended ===; mirv_streams record end; wait 30; quit"
     }
-}
+`;
+  
+  const vdm = `demoactions
+{
+${vdmActions}}
 `;
 
   return vdm;
@@ -611,6 +667,224 @@ function encodeTgaToMp4(options) {
 }
 
 /**
+ * Applies speedup to specific segments of a video using FFmpeg
+ * @param {Object} options
+ * @param {string} options.inputPath - Path to input video
+ * @param {Array} options.segments - Array of {startTime, endTime} segments to speed up
+ * @param {number} options.speedMultiplier - Speed multiplier (e.g., 4 for 4x)
+ * @param {number} options.crf - CRF quality setting
+ */
+async function applySpeedupToVideo(options) {
+  const { inputPath, segments, speedMultiplier, crf } = options;
+  
+  // Create temp output path
+  const tempOutput = inputPath.replace('.mp4', '_speedup.mp4');
+  
+  // Get video duration using ffprobe
+  const duration = await getVideoDuration(inputPath);
+  
+  // Build timeline of all segments (normal and speedup)
+  const timeline = buildSpeedupTimeline(segments, duration);
+  
+  // Build FFmpeg complex filter
+  const { filterComplex, outputMaps } = buildSpeedupFilter(timeline, speedMultiplier);
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', inputPath,
+      '-filter_complex', filterComplex,
+      '-map', outputMaps.video,
+      '-map', outputMaps.audio,
+      '-c:v', 'libx264',
+      '-crf', crf.toString(),
+      '-preset', 'medium',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      tempOutput,
+    ];
+    
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    activeFfmpegProcess = ffmpeg;
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      activeFfmpegProcess = null;
+      if (code === 0) {
+        // Replace original with speedup version
+        try {
+          fs.unlinkSync(inputPath);
+          fs.renameSync(tempOutput, inputPath);
+          resolve(inputPath);
+        } catch (err) {
+          reject(new Error(`Failed to replace video: ${err.message}`));
+        }
+      } else {
+        // Clean up temp file on failure
+        try { fs.unlinkSync(tempOutput); } catch (e) { /* ignore */ }
+        reject(new Error(`FFmpeg speedup failed: ${errorOutput.slice(-500)}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      activeFfmpegProcess = null;
+      reject(new Error(`Failed to run FFmpeg for speedup: ${err.message}`));
+    });
+  });
+}
+
+/**
+ * Gets video duration using ffprobe
+ */
+function getVideoDuration(videoPath) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      videoPath,
+    ];
+    
+    const ffprobe = spawn('ffprobe', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    let output = '';
+    ffprobe.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        const duration = parseFloat(output.trim());
+        resolve(duration);
+      } else {
+        reject(new Error('Failed to get video duration'));
+      }
+    });
+    
+    ffprobe.on('error', (err) => {
+      reject(new Error(`Failed to run ffprobe: ${err.message}`));
+    });
+  });
+}
+
+/**
+ * Builds timeline of segments with their speed settings
+ */
+function buildSpeedupTimeline(speedupSegments, totalDuration) {
+  const timeline = [];
+  let currentTime = 0;
+  
+  // Sort segments by start time
+  const sorted = [...speedupSegments].sort((a, b) => a.startTime - b.startTime);
+  
+  for (const seg of sorted) {
+    // Add normal segment before this speedup segment (if any gap)
+    if (seg.startTime > currentTime) {
+      timeline.push({
+        startTime: currentTime,
+        endTime: seg.startTime,
+        speedup: false,
+      });
+    }
+    
+    // Add speedup segment
+    timeline.push({
+      startTime: seg.startTime,
+      endTime: seg.endTime,
+      speedup: true,
+    });
+    
+    currentTime = seg.endTime;
+  }
+  
+  // Add final normal segment if needed
+  if (currentTime < totalDuration) {
+    timeline.push({
+      startTime: currentTime,
+      endTime: totalDuration,
+      speedup: false,
+    });
+  }
+  
+  return timeline;
+}
+
+/**
+ * Builds FFmpeg complex filter for speedup
+ */
+function buildSpeedupFilter(timeline, speedMultiplier) {
+  const videoParts = [];
+  const audioParts = [];
+  
+  // Build atempo chain for audio (atempo only supports 0.5-2.0 range)
+  const atempoFilters = buildAtempoChain(speedMultiplier);
+  
+  for (let i = 0; i < timeline.length; i++) {
+    const seg = timeline[i];
+    const trimStart = seg.startTime.toFixed(3);
+    const trimEnd = seg.endTime.toFixed(3);
+    
+    if (seg.speedup) {
+      // Video: setpts to speed up (divide PTS by multiplier)
+      videoParts.push(`[0:v]trim=${trimStart}:${trimEnd},setpts=PTS/${speedMultiplier},setpts=PTS-STARTPTS[v${i}]`);
+      // Audio: use atempo chain
+      audioParts.push(`[0:a]atrim=${trimStart}:${trimEnd},${atempoFilters},asetpts=PTS-STARTPTS[a${i}]`);
+    } else {
+      // Normal speed
+      videoParts.push(`[0:v]trim=${trimStart}:${trimEnd},setpts=PTS-STARTPTS[v${i}]`);
+      audioParts.push(`[0:a]atrim=${trimStart}:${trimEnd},asetpts=PTS-STARTPTS[a${i}]`);
+    }
+  }
+  
+  // Build concat inputs
+  const videoInputs = timeline.map((_, i) => `[v${i}]`).join('');
+  const audioInputs = timeline.map((_, i) => `[a${i}]`).join('');
+  
+  const filterComplex = [
+    ...videoParts,
+    ...audioParts,
+    `${videoInputs}concat=n=${timeline.length}:v=1:a=0[vout]`,
+    `${audioInputs}concat=n=${timeline.length}:v=0:a=1[aout]`,
+  ].join(';');
+  
+  return {
+    filterComplex,
+    outputMaps: { video: '[vout]', audio: '[aout]' },
+  };
+}
+
+/**
+ * Builds atempo filter chain for speeds > 2.0
+ * atempo only supports 0.5-2.0 range, so we chain multiple for higher speeds
+ */
+function buildAtempoChain(speedMultiplier) {
+  const filters = [];
+  let remaining = speedMultiplier;
+  
+  while (remaining > 2.0) {
+    filters.push('atempo=2.0');
+    remaining /= 2.0;
+  }
+  
+  if (remaining > 1.0) {
+    filters.push(`atempo=${remaining.toFixed(2)}`);
+  }
+  
+  return filters.length > 0 ? filters.join(',') : 'atempo=1.0';
+}
+
+/**
  * Cleans up TGA/WAV files after encoding
  */
 function cleanupTgaFiles(folder) {
@@ -631,10 +905,11 @@ function cleanupTgaFiles(folder) {
  * @param {string} options.outputPath Output folder
  * @param {string} [options.playerFilter] Optional Steam ID to filter by player
  * @param {string} [options.idFilter] Optional highlight ID to record only one clip
+ * @param {number} [options.speedupMultiplier] Optional speed multiplier for clutch gaps
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, speedupMultiplier } = options;
   
   const recordedClips = [];
   let clipIndex = 0;
@@ -685,6 +960,7 @@ async function recordAllHighlights(options) {
         highlight,
         outputPath,
         clipIndex,
+        speedupMultiplier,
       });
       
       recordedClips.push(clipPath);

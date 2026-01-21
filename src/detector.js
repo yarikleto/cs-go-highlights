@@ -329,7 +329,8 @@ function detectClutches(rounds, minEnemies, priorities = PRIORITIES) {
     if (clutchSituation.enemies < minEnemies) continue;
     
     // Require at least 1 kill by the clutch player
-    if (!clutchSituation.kills || clutchSituation.kills < 1) continue;
+    const killTicks = clutchSituation.killTicks || [];
+    if (killTicks.length < 1) continue;
     
     // Points for clutch based on difficulty (enemies * 10)
     const points = clutchSituation.enemies * 10;
@@ -343,6 +344,7 @@ function detectClutches(rounds, minEnemies, priorities = PRIORITIES) {
       startTick: clutchSituation.startTick,
       endTick: endTick,
       points,
+      killTicks, // Array of kill ticks for speed-up segments
     });
   }
 

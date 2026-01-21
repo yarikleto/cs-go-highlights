@@ -77,6 +77,8 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 | `--csgo <path>` | Yes | - | Path to CS:GO installation folder |
 | `--output <path>` | No | `./output` | Output folder for clips |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
+| `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
+| `--speedup <multiplier>` | No | - | Speed up clutch gaps (e.g., `4` for 4x speed) |
 
 #### Recording Settings
 
@@ -96,11 +98,14 @@ Settings automatically applied during recording:
 
 | Category | Settings |
 |----------|----------|
-| **HUD** | Hidden (cl_drawhud 0, cl_draw_only_deathnotices 1) |
-| **Viewmodel** | Hidden (r_drawviewmodel 0) |
+| **HUD** | Minimal (only death notices visible, killfeed filtered to highlight player) |
+| **Viewmodel** | Visible (r_drawviewmodel 1) |
+| **Crosshair** | Classic green static crosshair (consistent for all highlights) |
+| **Camera** | Locked to highlight player (spec_lock 1) |
 | **X-Ray** | Disabled (spec_show_xray 0) |
 | **Overlays** | Disabled (net_graph 0, cl_showfps 0) |
 | **Music** | Muted (all music volumes set to 0) |
+| **Voice** | Muted (voice_enable 0, no radio sounds) |
 | **Graphics** | High quality (HDR, postprocessing enabled) |
 | **Tracers** | Enabled (r_drawtracers_firstperson 1) |
 
@@ -122,9 +127,34 @@ Record only highlights from a specific player:
 node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --player 76561198012345678
 ```
 
+Record a single highlight by ID (useful for debugging):
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --id b8c4f695d6d9
+```
+
+Record clutch highlights with 4x speedup during gaps between kills:
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4
+```
+
+#### Clutch Speedup
+
+When using `--speedup`, long gaps between kills in clutch highlights are sped up using FFmpeg post-processing:
+
+- Keeps 2 seconds of normal speed before/after each kill
+- Only speeds up gaps longer than 4 seconds
+- Applies to both video and audio (audio uses atempo filter)
+- Works with any speed multiplier (e.g., `--speedup 2`, `--speedup 4`, `--speedup 8`)
+
+This makes long clutches more watchable while preserving the action moments at normal speed.
+
 #### Output
 
-The command produces individual clips in `<output>/clips/` folder (e.g., `clip_0001.mp4`, `clip_0002.mp4`).
+Clips are saved in `<output>/clips/` with the format: `{index}-{mapname}-{highlightId}.mp4`
+
+Example: `1-de_dust2-ced8b2df3663.mp4`, `2-de_mirage-a1b2c3d4e5f6.mp4`
 
 #### Recording Process
 
@@ -287,6 +317,7 @@ A 1vX situation where the solo player's team wins the round.
 
 **Qualification criteria:**
 - Minimum 2 enemies (1v2 or higher)
+- The clutching player must get at least 1 kill
 - The clutching player's team must win the round
 - Includes posthumous wins (e.g., T plants bomb, dies, bomb explodes)
 
@@ -322,6 +353,7 @@ The tool generates `highlights.json` with the following structure:
       "tickRate": 128,
       "highlights": [
         {
+          "id": "ced8b2df3663",
           "type": "kill-series",
           "priority": 2,
           "player": {
@@ -345,11 +377,12 @@ The tool generates `highlights.json` with the following structure:
             "startTick": 9744,
             "endTick": 12128,
             "durationSeconds": 18.63,
-            "paddingBefore": 2,
-            "paddingAfter": 1
+            "paddingBefore": 3,
+            "paddingAfter": 3
           }
         },
         {
+          "id": "b8c4f695d6d9",
           "type": "clutch",
           "priority": 5,
           "player": { "name": "PlayerName", "steamId": "..." },
@@ -358,9 +391,24 @@ The tool generates `highlights.json` with the following structure:
           "startTick": 50000,
           "endTick": 55000,
           "points": 30,
+          "killTicks": [51000, 53000, 54500],
           "demoFile": "demo.dem",
           "durationSeconds": 39.06,
-          "playback": { ... }
+          "playback": {
+            "startTick": 49616,
+            "endTick": 55384,
+            "durationSeconds": 45.06,
+            "paddingBefore": 3,
+            "paddingAfter": 3,
+            "speedupSegments": [
+              {
+                "startTick": 51256,
+                "endTick": 52744,
+                "durationTicks": 1488,
+                "durationSeconds": 11.63
+              }
+            ]
+          }
         }
       ]
     }
@@ -378,17 +426,28 @@ The tool generates `highlights.json` with the following structure:
 }
 ```
 
+### Highlight Fields
+
+Each highlight includes:
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique 12-character hash identifier |
+| `type` | Highlight type (kill-series, knife, collateral, clutch) |
+| `killTicks` | (Clutches only) Array of tick numbers when the clutch player got kills |
+
 ### Playback Information
 
 Each highlight includes a `playback` object with recommended tick ranges for video extraction:
 
 | Field | Description |
 |-------|-------------|
-| `startTick` | Start tick with padding (2 seconds before highlight) |
-| `endTick` | End tick with padding (1 second after highlight) |
+| `startTick` | Start tick with padding (3 seconds before highlight) |
+| `endTick` | End tick with padding (3 seconds after highlight, capped at round end) |
 | `durationSeconds` | Total playback duration including padding |
 | `paddingBefore` | Seconds of padding before the highlight |
 | `paddingAfter` | Seconds of padding after the highlight |
+| `speedupSegments` | (Clutches only) Array of segments to speed up (gaps between kills) |
 
 ## Configuration
 
@@ -396,6 +455,14 @@ Default configuration (hardcoded in `src/index.js`):
 
 ```javascript
 {
+  padding: {
+    before: 3,           // Seconds before highlight starts
+    after: 3             // Seconds after highlight ends
+  },
+  speedup: {
+    bufferAroundKills: 2,  // Seconds at normal speed before/after each kill
+    minGapDuration: 4      // Minimum gap duration to trigger speedup
+  },
   detection: {
     maxDelay: 15,        // Max seconds between kills for a series
     minSeriesKills: 3,   // Min kills for regular series (2 with knife always qualifies)
