@@ -3,6 +3,7 @@
 const { program } = require('commander');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { parseDemo } = require('./parser');
 const { detectHighlights } = require('./detector');
 const { resolveCollisions } = require('./resolver');
@@ -14,7 +15,7 @@ const DEFAULT_CONFIG = {
   // Padding settings (in seconds) - adjust these to control clip length
   padding: {
     before: 4,  // seconds before highlight starts
-    after: 5,   // seconds after highlight ends
+    after: 3,   // seconds after highlight ends
   },
   
   // Detection settings
@@ -70,6 +71,7 @@ program
   .requiredOption('--csgo <path>', 'Path to CS:GO installation folder')
   .option('--output <path>', 'Output folder for clips', './output')
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
+  .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
   .action(recordCommand);
 
 // Merge command - merge recorded clips into a single video
@@ -167,6 +169,10 @@ async function analyzeCommand(options) {
           endTick = h.endTick;
         }
         
+        // Generate unique ID based on highlight properties (stable across re-runs)
+        const idSource = `${fileName}|${h.player.steamId}|${h.type}|${startTick}|${endTick}`;
+        const id = crypto.createHash('sha256').update(idSource).digest('hex').substring(0, 12);
+        
         // Calculate duration in seconds (without padding)
         const durationSeconds = (endTick - startTick) / tickRate;
         
@@ -176,12 +182,55 @@ async function analyzeCommand(options) {
         const paddingBeforeTicks = Math.round(paddingBefore * tickRate);
         const paddingAfterTicks = Math.round(paddingAfter * tickRate);
         const playbackStartTick = Math.max(0, startTick - paddingBeforeTicks);
-        const playbackEndTick = endTick + paddingAfterTicks;
+        
+        // Calculate playback end tick, capped at round end
+        let playbackEndTick = endTick + paddingAfterTicks;
+        
+        // Find the round that contains this highlight
+        const containingRound = demoData.rounds.find(r => 
+          r.startTick <= endTick && r.endTick && r.endTick >= endTick
+        );
+        
+        // Find the first round (to handle warmup/pre-game highlights)
+        const firstRound = demoData.rounds[0];
+        
+        // Cap playback at round end + 2 second buffer, but NEVER show next round
+        const roundEndBuffer = Math.round(2 * tickRate); // 2 seconds after round end
+        
+        // Find next round to ensure we NEVER show new round visuals
+        const roundIndex = containingRound ? demoData.rounds.indexOf(containingRound) : -1;
+        const nextRound = roundIndex >= 0 ? demoData.rounds[roundIndex + 1] : null;
+        const lastRound = demoData.rounds[demoData.rounds.length - 1];
+        
+        if (containingRound && containingRound.endTick) {
+          // Cap at round end + buffer
+          let cappedEnd = containingRound.endTick + roundEndBuffer;
+          
+          // Also cap at next round start to NEVER show new round
+          if (nextRound && nextRound.startTick) {
+            cappedEnd = Math.min(cappedEnd, nextRound.startTick);
+          }
+          
+          playbackEndTick = Math.min(playbackEndTick, cappedEnd);
+        }
+        
+        // Also cap at demo end (last round's end + buffer)
+        if (lastRound && lastRound.endTick) {
+          playbackEndTick = Math.min(playbackEndTick, lastRound.endTick + roundEndBuffer);
+        }
+        
+        // Handle first round (before Round 1's startTick in demo data)
+        if (!containingRound && firstRound && endTick < firstRound.startTick) {
+          // Use minimal padding after last kill, capped at Round 1 start
+          const minimalPadding = Math.round(2 * tickRate); // 2 seconds after last kill
+          playbackEndTick = Math.min(endTick + minimalPadding, firstRound.startTick);
+        }
         
         // Calculate total playback duration
         const playbackDurationSeconds = (playbackEndTick - playbackStartTick) / tickRate;
         
         return {
+          id,
           ...h,
           demoFile: fileName,
           durationSeconds: Math.round(durationSeconds * 100) / 100,
@@ -236,6 +285,7 @@ async function recordCommand(options) {
   const csgoPath = path.resolve(options.csgo);
   const outputPath = path.resolve(options.output);
   const playerFilter = options.player || null;
+  const idFilter = options.id || null;
 
   // Validate highlights.json exists
   if (!fs.existsSync(highlightsPath)) {
@@ -271,11 +321,13 @@ async function recordCommand(options) {
     process.exit(1);
   }
 
-  // Count total highlights
+  // Count total highlights (with filters)
   let totalHighlights = 0;
   for (const demo of highlightsData.demos) {
     for (const highlight of demo.highlights) {
-      if (!playerFilter || highlight.player.steamId === playerFilter) {
+      const matchesPlayer = !playerFilter || highlight.player.steamId === playerFilter;
+      const matchesId = !idFilter || highlight.id === idFilter;
+      if (matchesPlayer && matchesId) {
         totalHighlights++;
       }
     }
@@ -285,6 +337,9 @@ async function recordCommand(options) {
     console.error('Error: No highlights found to record');
     if (playerFilter) {
       console.error(`  (filtered by player: ${playerFilter})`);
+    }
+    if (idFilter) {
+      console.error(`  (filtered by ID: ${idFilter})`);
     }
     process.exit(1);
   }
@@ -299,6 +354,9 @@ async function recordCommand(options) {
   console.log(`Total highlights to record: ${totalHighlights}`);
   if (playerFilter) {
     console.log(`Filtering by player: ${playerFilter}`);
+  }
+  if (idFilter) {
+    console.log(`Filtering by ID: ${idFilter}`);
   }
 
   // Ensure output directory exists
@@ -315,6 +373,7 @@ async function recordCommand(options) {
       csgoPath,
       outputPath,
       playerFilter,
+      idFilter,
     });
 
     if (recordedClips.length === 0) {

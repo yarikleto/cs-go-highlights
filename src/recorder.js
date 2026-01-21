@@ -96,7 +96,14 @@ const DEFAULT_SETTINGS = {
 async function recordHighlight(options) {
   const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex } = options;
   
-  const clipName = `clip_${String(clipIndex).padStart(4, '0')}`;
+  // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
+  const demoFileName = path.basename(demoPath, '.dem');
+  const mapMatch = demoFileName.match(/-(de_[a-z0-9_]+|cs_[a-z0-9_]+|ar_[a-z0-9_]+)/i);
+  const mapName = mapMatch ? mapMatch[1] : 'unknown';
+  
+  // Generate clip name: position-mapname-highlightId
+  const highlightId = highlight.id || 'noid';
+  const clipName = `${clipIndex}-${mapName}-${highlightId}`;
   const clipFolder = path.join(outputPath, 'clips', clipName);
   const clipOutputPath = path.join(outputPath, 'clips', `${clipName}.mp4`);
   
@@ -606,10 +613,11 @@ function cleanupTgaFiles(folder) {
  * @param {string} options.csgoPath Path to CS:GO installation
  * @param {string} options.outputPath Output folder
  * @param {string} [options.playerFilter] Optional Steam ID to filter by player
+ * @param {string} [options.idFilter] Optional highlight ID to record only one clip
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter } = options;
   
   const recordedClips = [];
   let clipIndex = 0;
@@ -618,8 +626,11 @@ async function recordAllHighlights(options) {
   const allHighlights = [];
   for (const demo of highlightsData.demos) {
     for (const highlight of demo.highlights) {
-      // Apply player filter if specified
+      // Apply filters if specified
       if (playerFilter && highlight.player.steamId !== playerFilter) {
+        continue;
+      }
+      if (idFilter && highlight.id !== idFilter) {
         continue;
       }
       
