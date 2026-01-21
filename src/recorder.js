@@ -284,6 +284,11 @@ async function recordHighlight(options) {
       startTime: slowmoStartTime,
       endTime: slowmoEndTime,
       factor: slowmoFactor,
+      // Visual effects from config
+      peakContrast: slowmotion.contrast || 1.2,
+      peakBrightness: slowmotion.brightness || 0.05,
+      peakRedBoost: slowmotion.redBoost || 0.15,
+      peakSaturation: slowmotion.saturation || 1.1,
       crf: DEFAULT_SETTINGS.crf,
     });
     
@@ -446,18 +451,26 @@ async function applyOverlayToVideo(options) {
 }
 
 /**
- * Applies slow motion effect with impact style:
- * - Instant slowdown at kill moment
- * - Gradual ramp-up back to normal speed
+ * Applies slow motion effect with cinematic impact style:
+ * - Instant slowdown at kill moment + color effects (contrast, red boost, saturation)
+ * - Gradual ramp-up back to normal speed + effects fade-out
  * @param {Object} options - Options for slow motion
  * @param {string} options.inputPath - Path to input video
  * @param {number} options.startTime - Start time in seconds (kill moment)
  * @param {number} options.endTime - End time in seconds
  * @param {number} options.factor - Slow motion factor at peak (e.g., 0.25 = quarter speed)
+ * @param {number} options.peakContrast - Peak contrast (1.0 = normal)
+ * @param {number} options.peakBrightness - Peak brightness boost (0 = none)
+ * @param {number} options.peakRedBoost - Peak red/warm shift (0 = none, 0.2 = strong)
+ * @param {number} options.peakSaturation - Peak color saturation (1.0 = normal)
  * @param {number} options.crf - Video quality (CRF value)
  */
 async function applySlowMotionToVideo(options) {
-  const { inputPath, startTime, endTime, factor, crf } = options;
+  const { 
+    inputPath, startTime, endTime, factor, 
+    peakContrast = 1.2, peakBrightness = 0.05, peakRedBoost = 0.15, peakSaturation = 1.1,
+    crf 
+  } = options;
   
   // Create temp output path
   const tempOutput = inputPath.replace('.mp4', '_slowmo.mp4');
@@ -471,14 +484,25 @@ async function applySlowMotionToVideo(options) {
   const numSegments = 12; // More segments = smoother transition
   const segmentDuration = slowmoDuration / numSegments;
   
-  // Calculate speed for each segment using sine easing for ultra-smooth transition
+  // Calculate speed and visual effects for each segment using sine easing
   const speeds = [];
+  const effects = []; // Visual effects for "impact" look
+  
   for (let i = 0; i < numSegments; i++) {
     const progress = i / (numSegments - 1); // 0 to 1
     // Sine ease-in: very smooth, stays slow longer, then accelerates
     const eased = 1 - Math.cos((progress * Math.PI) / 2);
     const speed = factor + (1.0 - factor) * eased;
     speeds.push(speed);
+    
+    // Effects: start at peak, fade to normal with same easing curve
+    const intensity = 1 - eased; // 1 at start, 0 at end
+    effects.push({
+      contrast: 1 + (peakContrast - 1) * intensity,
+      brightness: peakBrightness * intensity,
+      redBoost: peakRedBoost * intensity,      // Warm/red shift for blood
+      saturation: 1 + (peakSaturation - 1) * intensity,
+    });
   }
   
   // Build filter for multi-segment slowmo with ramp
@@ -494,16 +518,22 @@ async function applySlowMotionToVideo(options) {
   filters.push(`[v0]trim=0:${startTime},setpts=PTS-STARTPTS[vbefore]`);
   filters.push(`[a0]atrim=0:${startTime},asetpts=PTS-STARTPTS[abefore]`);
   
-  // Slowmo segments with graduated speeds
+  // Slowmo segments with graduated speeds and cinematic effects
   const slowmoOutputs = [];
   for (let i = 0; i < numSegments; i++) {
     const segStart = startTime + i * segmentDuration;
     const segEnd = startTime + (i + 1) * segmentDuration;
     const speed = speeds[i];
+    const fx = effects[i];
     const setptsMultiplier = (1 / speed).toFixed(4);
     const atempoChain = buildAtempoChain(speed);
     
-    filters.push(`[v${i + 1}]trim=${segStart}:${segEnd},setpts=${setptsMultiplier}*(PTS-STARTPTS)[vslowmo${i}]`);
+    // Apply slowmo + cinematic impact effect:
+    // eq filter: contrast, brightness, saturation
+    // colorbalance: rm (red midtones boost), bm (blue midtones reduce) for warm/blood effect
+    const eqFilter = `eq=contrast=${fx.contrast.toFixed(3)}:brightness=${fx.brightness.toFixed(3)}:saturation=${fx.saturation.toFixed(3)}`;
+    const colorBalance = `colorbalance=rm=${fx.redBoost.toFixed(3)}:bm=${(-fx.redBoost * 0.5).toFixed(3)}`;
+    filters.push(`[v${i + 1}]trim=${segStart}:${segEnd},setpts=${setptsMultiplier}*(PTS-STARTPTS),${eqFilter},${colorBalance}[vslowmo${i}]`);
     filters.push(`[a${i + 1}]atrim=${segStart}:${segEnd},asetpts=PTS-STARTPTS,${atempoChain}[aslowmo${i}]`);
     slowmoOutputs.push(`[vslowmo${i}][aslowmo${i}]`);
   }

@@ -27,6 +27,10 @@ const DEFAULT_CONFIG = {
   // Slow motion settings
   slowmo: {
     duration: 1,          // seconds for the slowmo ramp-up effect (from peak slowdown back to normal)
+    contrast: 1.2,        // peak contrast (1.0 = normal, higher = more punch)
+    brightness: 0.05,     // peak brightness boost (0 = none)
+    redBoost: 0.15,       // warm/red shift in midtones (0 = none, 0.2 = strong red)
+    saturation: 1.1,      // slight saturation boost (1.0 = normal)
   },
   
   // Detection settings
@@ -311,6 +315,11 @@ async function analyzeCommand(options) {
               durationSeconds: slowmoDuration,
               reason: lastKill.noscope ? 'noscope' : 'headshot',
               weapon: lastKill.weapon,
+              // Visual effects at peak (fade out with slowmo)
+              contrast: DEFAULT_CONFIG.slowmo.contrast,
+              brightness: DEFAULT_CONFIG.slowmo.brightness,
+              redBoost: DEFAULT_CONFIG.slowmo.redBoost,
+              saturation: DEFAULT_CONFIG.slowmo.saturation,
             };
           }
         }
