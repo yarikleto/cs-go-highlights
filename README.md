@@ -78,7 +78,7 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 | `--output <path>` | No | `./output` | Output folder for clips |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
-| `--speedup <multiplier>` | No | - | Speed up clutch gaps (e.g., `4` for 4x speed) |
+| `--speedup <multiplier>` | No | - | Speed up gaps between kills (e.g., `4` for 4x speed) |
 
 #### Recording Settings
 
@@ -133,22 +133,23 @@ Record a single highlight by ID (useful for debugging):
 node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --id b8c4f695d6d9
 ```
 
-Record clutch highlights with 4x speedup during gaps between kills:
+Record highlights with 4x speedup during gaps between kills:
 
 ```bash
 node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4
 ```
 
-#### Clutch Speedup
+#### Speedup (Clutches & Kill Series)
 
-When using `--speedup`, long gaps between kills in clutch highlights are sped up using FFmpeg post-processing:
+When using `--speedup`, long gaps between kills are sped up using FFmpeg post-processing:
 
+- Works for both **clutches** and **kill series** (multi kills)
 - Keeps 2 seconds of normal speed before/after each kill
 - Only speeds up gaps longer than 4 seconds
 - Applies to both video and audio (audio uses atempo filter)
 - Works with any speed multiplier (e.g., `--speedup 2`, `--speedup 4`, `--speedup 8`)
 
-This makes long clutches more watchable while preserving the action moments at normal speed.
+This makes long highlights more watchable while preserving the action moments at normal speed.
 
 #### Output
 
@@ -447,7 +448,7 @@ Each highlight includes a `playback` object with recommended tick ranges for vid
 | `durationSeconds` | Total playback duration including padding |
 | `paddingBefore` | Seconds of padding before the highlight |
 | `paddingAfter` | Seconds of padding after the highlight |
-| `speedupSegments` | (Clutches only) Array of segments to speed up (gaps between kills) |
+| `speedupSegments` | (Clutches & kill series) Array of segments to speed up (gaps between kills) |
 
 ## Configuration
 

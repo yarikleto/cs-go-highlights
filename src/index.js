@@ -236,9 +236,18 @@ async function analyzeCommand(options) {
         // Calculate total playback duration
         const playbackDurationSeconds = (playbackEndTick - playbackStartTick) / tickRate;
         
-        // Calculate speed-up segments for clutches (gaps between kills)
+        // Calculate speed-up segments for clutches and kill-series (gaps between kills)
         let speedupSegments = null;
+        let killTicks = null;
+        
+        // Get kill ticks based on highlight type
         if (h.type === 'clutch' && h.killTicks && h.killTicks.length > 0) {
+          killTicks = h.killTicks;
+        } else if (h.type === 'kill-series' && h.kills && h.kills.length > 0) {
+          killTicks = h.kills.map(k => k.tick);
+        }
+        
+        if (killTicks && killTicks.length > 0) {
           const bufferSeconds = DEFAULT_CONFIG.speedup.bufferAroundKills;
           const minGapSeconds = DEFAULT_CONFIG.speedup.minGapDuration;
           const bufferTicks = Math.round(bufferSeconds * tickRate);
@@ -248,7 +257,7 @@ async function analyzeCommand(options) {
           // All important ticks: playback start, each kill, playback end
           const importantTicks = [
             playbackStartTick,
-            ...h.killTicks,
+            ...killTicks,
             playbackEndTick,
           ];
           
@@ -285,7 +294,7 @@ async function analyzeCommand(options) {
             durationSeconds: Math.round(playbackDurationSeconds * 100) / 100,
             paddingBefore: paddingBefore,
             paddingAfter: paddingAfter,
-            speedupSegments, // Segments to speed up for clutches
+            speedupSegments, // Segments to speed up (gaps between kills)
           },
         };
       });
