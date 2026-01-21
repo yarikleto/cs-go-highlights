@@ -328,6 +328,9 @@ function detectClutches(rounds, minEnemies, priorities = PRIORITIES) {
     // Check minimum enemies requirement
     if (clutchSituation.enemies < minEnemies) continue;
     
+    // Require at least 1 kill by the clutch player
+    if (!clutchSituation.kills || clutchSituation.kills < 1) continue;
+    
     // Points for clutch based on difficulty (enemies * 10)
     const points = clutchSituation.enemies * 10;
     

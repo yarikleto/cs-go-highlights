@@ -225,6 +225,15 @@ function parseDemo(filePath) {
       if (victim.teamNumber === 3) aliveCT--;
       else if (victim.teamNumber === 2) aliveT--;
 
+      // Track kills by clutch player (if clutch situation exists)
+      if (currentRound && currentRound.clutchSituation) {
+        const clutchPlayerSteamId = currentRound.clutchSituation.player.steamId;
+        const attackerSteamId = attacker.steam64Id?.toString() || null;
+        if (clutchPlayerSteamId && attackerSteamId && clutchPlayerSteamId === attackerSteamId) {
+          currentRound.clutchSituation.kills++;
+        }
+      }
+
       // Check for clutch situation
       if (currentRound && !currentRound.clutchSituation) {
         if (aliveCT === 1 && aliveT >= 2) {
@@ -239,6 +248,7 @@ function parseDemo(filePath) {
               team: 3,
               enemies: aliveT,
               startTick: demoFile.currentTick,
+              kills: 0, // Track kills by clutch player
             };
           }
         } else if (aliveT === 1 && aliveCT >= 2) {
@@ -253,6 +263,7 @@ function parseDemo(filePath) {
               team: 2,
               enemies: aliveCT,
               startTick: demoFile.currentTick,
+              kills: 0, // Track kills by clutch player
             };
           }
         }
