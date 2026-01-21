@@ -353,6 +353,23 @@ cl_showloadout 0
 r_drawviewmodel 1
 cl_righthand 1
 
+// === CROSSHAIR (classic green static) ===
+// CS:GO demos don't save crosshair settings, so we set a consistent one
+cl_crosshairalpha 255
+cl_crosshaircolor 1
+cl_crosshaircolor_r 0
+cl_crosshaircolor_g 255
+cl_crosshaircolor_b 0
+cl_crosshairdot 0
+cl_crosshairgap -1
+cl_crosshairsize 2
+cl_crosshairstyle 4
+cl_crosshairthickness 1
+cl_crosshair_drawoutline 1
+cl_crosshair_outlinethickness 1
+cl_crosshair_sniper_width 1
+cl_crosshairusealpha 1
+
 // === DEMO PLAYBACK SETTINGS ===
 demo_debug 0
 cl_showevents 0
