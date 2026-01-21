@@ -88,6 +88,7 @@ program
   .requiredOption('--clips <path>', 'Path to folder containing clip files (.mp4)')
   .option('--output <path>', 'Output path for final video', './output/highlights_final.mp4')
   .option('--cleanup', 'Delete individual clips after merging')
+  .option('--transition <duration>', 'Add fade in/out transitions (duration in seconds)', parseFloat)
   .action(mergeCommand);
 
 // Compress command - compress a video to reduce file size
@@ -462,6 +463,7 @@ async function mergeCommand(options) {
   const clipsPath = path.resolve(options.clips);
   const outputPath = path.resolve(options.output);
   const shouldCleanup = options.cleanup || false;
+  const transitionDuration = options.transition || null;
 
   // Validate clips folder exists
   if (!fs.existsSync(clipsPath)) {
@@ -485,6 +487,9 @@ async function mergeCommand(options) {
   console.log(`Clips folder: ${clipsPath}`);
   console.log(`Output file: ${outputPath}`);
   console.log(`Found ${clipFiles.length} clips to merge`);
+  if (transitionDuration) {
+    console.log(`Transitions: ${transitionDuration}s fade in/out`);
+  }
   if (shouldCleanup) {
     console.log('Cleanup: Will delete clips after merging');
   }
@@ -500,6 +505,7 @@ async function mergeCommand(options) {
       clipPaths: clipFiles,
       outputPath,
       cleanupClips: shouldCleanup,
+      transitionDuration,
     });
 
     // Generate and display summary

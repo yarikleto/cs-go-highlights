@@ -8,39 +8,48 @@ const path = require('path');
  * @param {string[]} options.clipPaths Array of paths to video clips
  * @param {string} options.outputPath Path for the final merged video
  * @param {boolean} [options.cleanupClips=false] Whether to delete clips after merging
+ * @param {number} [options.transitionDuration=null] Duration of fade in/out transitions in seconds
  * @returns {Promise<string>} Path to the merged video
  */
 async function mergeClips(options) {
-  const { clipPaths, outputPath, cleanupClips = false } = options;
+  const { clipPaths, outputPath, cleanupClips = false, transitionDuration = null } = options;
   
   if (clipPaths.length === 0) {
     throw new Error('No clips to merge');
   }
   
   if (clipPaths.length === 1) {
-    // Only one clip, just copy it
-    fs.copyFileSync(clipPaths[0], outputPath);
+    // Only one clip - apply transitions if requested, otherwise just copy
+    if (transitionDuration) {
+      console.log(`\nApplying fade transitions to single clip...`);
+      await applyFadeToSingleClip(clipPaths[0], outputPath, transitionDuration);
+    } else {
+      fs.copyFileSync(clipPaths[0], outputPath);
+    }
     if (cleanupClips) {
       fs.unlinkSync(clipPaths[0]);
     }
     return outputPath;
   }
   
-  // Create concat list file for FFmpeg
-  const concatListPath = path.join(path.dirname(outputPath), 'concat_list.txt');
-  const concatContent = clipPaths
-    .map(clipPath => `file '${clipPath.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`)
-    .join('\n');
-  
-  fs.writeFileSync(concatListPath, concatContent);
-  
   console.log(`\nMerging ${clipPaths.length} clips into final video...`);
   
   try {
-    await runFfmpegConcat(concatListPath, outputPath);
-    
-    // Cleanup
-    fs.unlinkSync(concatListPath);
+    if (transitionDuration) {
+      // Use complex filter for fade transitions (requires re-encoding)
+      console.log(`Applying ${transitionDuration}s fade transitions (this may take longer)...`);
+      await runFfmpegMergeWithTransitions(clipPaths, outputPath, transitionDuration);
+    } else {
+      // Simple concat without re-encoding
+      const concatListPath = path.join(path.dirname(outputPath), 'concat_list.txt');
+      const concatContent = clipPaths
+        .map(clipPath => `file '${clipPath.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`)
+        .join('\n');
+      
+      fs.writeFileSync(concatListPath, concatContent);
+      await runFfmpegConcat(concatListPath, outputPath);
+      fs.unlinkSync(concatListPath);
+    }
     
     if (cleanupClips) {
       for (const clipPath of clipPaths) {
@@ -55,11 +64,150 @@ async function mergeClips(options) {
     return outputPath;
   } catch (err) {
     // Cleanup concat list on error
+    const concatListPath = path.join(path.dirname(outputPath), 'concat_list.txt');
     if (fs.existsSync(concatListPath)) {
       fs.unlinkSync(concatListPath);
     }
     throw err;
   }
+}
+
+/**
+ * Applies fade in/out to a single clip
+ */
+async function applyFadeToSingleClip(inputPath, outputPath, fadeDuration) {
+  const duration = await getVideoDuration(inputPath);
+  const fadeOutStart = Math.max(0, duration - fadeDuration);
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', inputPath,
+      '-vf', `fade=t=in:st=0:d=${fadeDuration},fade=t=out:st=${fadeOutStart}:d=${fadeDuration}`,
+      '-af', `afade=t=in:st=0:d=${fadeDuration},afade=t=out:st=${fadeOutStart}:d=${fadeDuration}`,
+      '-c:v', 'libx264',
+      '-crf', '18',
+      '-preset', 'medium',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      outputPath,
+    ];
+    
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        console.log(`Merged video saved to: ${outputPath}`);
+        resolve(outputPath);
+      } else {
+        reject(new Error(`FFmpeg fade failed: ${errorOutput.slice(-500)}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      reject(new Error(`Failed to run FFmpeg: ${err.message}`));
+    });
+  });
+}
+
+/**
+ * Merges clips with fade in/out transitions using FFmpeg complex filter
+ */
+async function runFfmpegMergeWithTransitions(clipPaths, outputPath, fadeDuration) {
+  // Get durations of all clips
+  const durations = await Promise.all(clipPaths.map(clip => getVideoDuration(clip)));
+  
+  // Build input arguments
+  const inputArgs = clipPaths.flatMap(clip => ['-i', clip]);
+  
+  // Build complex filter for fades
+  const videoFilters = [];
+  const audioFilters = [];
+  const videoOutputs = [];
+  const audioOutputs = [];
+  
+  for (let i = 0; i < clipPaths.length; i++) {
+    const duration = durations[i];
+    const fadeOutStart = Math.max(0, duration - fadeDuration);
+    
+    // First clip: only fade out at end
+    // Middle clips: fade in at start, fade out at end
+    // Last clip: only fade in at start
+    let vFilter = '';
+    let aFilter = '';
+    
+    if (i === 0) {
+      // First clip: fade out only
+      vFilter = `[${i}:v]fade=t=out:st=${fadeOutStart}:d=${fadeDuration}[v${i}]`;
+      aFilter = `[${i}:a]afade=t=out:st=${fadeOutStart}:d=${fadeDuration}[a${i}]`;
+    } else if (i === clipPaths.length - 1) {
+      // Last clip: fade in only
+      vFilter = `[${i}:v]fade=t=in:st=0:d=${fadeDuration}[v${i}]`;
+      aFilter = `[${i}:a]afade=t=in:st=0:d=${fadeDuration}[a${i}]`;
+    } else {
+      // Middle clips: both fade in and fade out
+      vFilter = `[${i}:v]fade=t=in:st=0:d=${fadeDuration},fade=t=out:st=${fadeOutStart}:d=${fadeDuration}[v${i}]`;
+      aFilter = `[${i}:a]afade=t=in:st=0:d=${fadeDuration},afade=t=out:st=${fadeOutStart}:d=${fadeDuration}[a${i}]`;
+    }
+    
+    videoFilters.push(vFilter);
+    audioFilters.push(aFilter);
+    videoOutputs.push(`[v${i}]`);
+    audioOutputs.push(`[a${i}]`);
+  }
+  
+  // Concat all streams
+  const concatVideo = `${videoOutputs.join('')}concat=n=${clipPaths.length}:v=1:a=0[vout]`;
+  const concatAudio = `${audioOutputs.join('')}concat=n=${clipPaths.length}:v=0:a=1[aout]`;
+  
+  const filterComplex = [...videoFilters, ...audioFilters, concatVideo, concatAudio].join(';');
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      ...inputArgs,
+      '-filter_complex', filterComplex,
+      '-map', '[vout]',
+      '-map', '[aout]',
+      '-c:v', 'libx264',
+      '-crf', '18',
+      '-preset', 'medium',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      outputPath,
+    ];
+    
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        console.log(`Merged video saved to: ${outputPath}`);
+        resolve(outputPath);
+      } else {
+        reject(new Error(`FFmpeg merge with transitions failed: ${errorOutput.slice(-500)}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      reject(new Error(`Failed to run FFmpeg: ${err.message}`));
+    });
+  });
 }
 
 /**

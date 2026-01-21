@@ -186,6 +186,7 @@ node src/index.js merge --clips <path> [--output <path>] [--cleanup]
 | `--clips <path>` | Yes | - | Path to folder containing `.mp4` clip files |
 | `--output <path>` | No | `./output/highlights_final.mp4` | Output path for final video |
 | `--cleanup` | No | - | Delete individual clips after merging |
+| `--transition <duration>` | No | - | Add fade in/out transitions (duration in seconds) |
 
 #### Examples
 
@@ -206,6 +207,23 @@ Merge and delete individual clips after:
 ```bash
 node src/index.js merge --clips ./output/clips --cleanup
 ```
+
+Merge with 1-second fade transitions between clips:
+
+```bash
+node src/index.js merge --clips ./output/clips --transition 1
+```
+
+#### Transitions
+
+When using `--transition`, fade effects are applied between highlights:
+
+- **Fade out** at the end of each clip (except the last)
+- **Fade in** at the beginning of each clip (except the first)
+- Applies to both video and audio
+- Requires re-encoding, so it takes longer than simple merging
+
+Example: `--transition 1` adds 1-second fades, creating smooth transitions between highlights.
 
 #### Output
 
