@@ -79,6 +79,7 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
 | `--speedup <multiplier>` | No | - | Speed up gaps between kills (e.g., `4` for 4x speed) |
+| `--overlay` | No | - | Show player name and highlight type overlay (fade in/out) |
 
 #### Recording Settings
 
@@ -150,6 +151,27 @@ When using `--speedup`, long gaps between kills are sped up using FFmpeg post-pr
 - Works with any speed multiplier (e.g., `--speedup 2`, `--speedup 4`, `--speedup 8`)
 
 This makes long highlights more watchable while preserving the action moments at normal speed.
+
+#### Player Overlay
+
+When using `--overlay`, a player info overlay is displayed in the bottom-left corner:
+
+- **Player name** (large white text)
+- **Highlight type** (smaller yellow text: "1V4 CLUTCH", "ACE", "4K", "KNIFE KILL", etc.)
+- Fade in (0.5s), display (2.5s), fade out (0.5s)
+- Semi-transparent dark background for readability
+
+Example with overlay:
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --overlay
+```
+
+Combine with speedup:
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4 --overlay
+```
 
 #### Output
 

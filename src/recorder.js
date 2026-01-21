@@ -92,10 +92,11 @@ const DEFAULT_SETTINGS = {
  * @param {string} options.outputPath Output folder for clips
  * @param {number} options.clipIndex Index of this clip (for naming)
  * @param {number} [options.speedupMultiplier] Optional speed multiplier for clutch gaps
+ * @param {boolean} [options.showOverlay] Whether to show player name and highlight type overlay
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, speedupMultiplier } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, speedupMultiplier, showOverlay } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -247,6 +248,21 @@ async function recordHighlight(options) {
     console.log(`    [5/5] Speedup applied successfully`);
   }
   
+  // Apply overlay if enabled
+  if (showOverlay) {
+    const stepNum = speedupMultiplier && speedupSegments && speedupSegments.length > 0 ? 6 : 5;
+    console.log(`    [${stepNum}/${stepNum}] Adding player overlay...`);
+    
+    await applyOverlayToVideo({
+      inputPath: clipOutputPath,
+      playerName: highlight.player.name,
+      highlightType: formatHighlightType(highlight),
+      crf: DEFAULT_SETTINGS.crf,
+    });
+    
+    console.log(`    [${stepNum}/${stepNum}] Overlay applied successfully`);
+  }
+  
   return clipOutputPath;
 }
 
@@ -262,6 +278,144 @@ function steam64ToAccountId(steam64) {
   const steam64BigInt = BigInt(steam64);
   const accountId = steam64BigInt - BigInt('76561197960265728');
   return accountId.toString();
+}
+
+/**
+ * Formats highlight type for display in overlay
+ */
+function formatHighlightType(highlight) {
+  switch (highlight.type) {
+    case 'clutch':
+      return highlight.situation ? highlight.situation.toUpperCase() + ' CLUTCH' : 'CLUTCH';
+    case 'kill-series':
+      if (highlight.killCount === 5) return 'ACE';
+      if (highlight.killCount === 4) return '4K';
+      if (highlight.killCount === 3) return '3K';
+      return `${highlight.killCount}K`;
+    case 'knife':
+      return 'KNIFE KILL';
+    case 'collateral':
+      return 'COLLATERAL';
+    default:
+      return highlight.type.toUpperCase();
+  }
+}
+
+/**
+ * Applies player name and highlight type overlay to video
+ */
+async function applyOverlayToVideo(options) {
+  const { inputPath, playerName, highlightType, crf } = options;
+  
+  // Create temp output path
+  const tempOutput = inputPath.replace('.mp4', '_overlay.mp4');
+  
+  // Overlay settings
+  const fadeDuration = 0.5; // seconds for fade in/out
+  const displayDuration = 2.5; // full opacity duration
+  const totalDuration = fadeDuration * 2 + displayDuration; // 3.5 seconds total
+  
+  // Escape special characters for FFmpeg drawtext
+  const escapedName = playerName.replace(/'/g, "\\'").replace(/:/g, "\\:");
+  const escapedType = highlightType.replace(/'/g, "\\'").replace(/:/g, "\\:");
+  
+  // Font file path - use local font in project fonts folder
+  // Escape colon for FFmpeg filter syntax (C: -> C\:)
+  const fontsDir = path.join(__dirname, '..', 'fonts');
+  const fontFile = path.join(fontsDir, 'arial.ttf').replace(/\\/g, '/').replace(/:/g, '\\:');
+  
+  // Texture file path for background
+  const texturesDir = path.join(__dirname, '..', 'textures');
+  const texturePath = path.join(texturesDir, 'nickname-background.png').replace(/\\/g, '/').replace(/:/g, '\\:');
+  
+  // Alpha expression for fade in/out (commas escaped for FFmpeg filter syntax)
+  // Fade in: 0-0.5s, Full: 0.5-3s, Fade out: 3-3.5s
+  const fadeIn = fadeDuration;
+  const fadeOutStart = fadeDuration + displayDuration;
+  const alphaExpr = `if(lt(t\\,${fadeIn})\\,t/${fadeIn}\\,if(lt(t\\,${fadeOutStart})\\,1\\,(${totalDuration}-t)/${fadeDuration}))`;
+  
+  // Build complex filter with texture background overlay
+  // Position: bottom left
+  const bgX = -70; // left edge of texture from left
+  const bgY = -40; // bottom edge of texture from bottom of video
+  
+  // Text positioning - centered inside the texture
+  // Texture is 750x300, text should be inside it
+  const textX = bgX + 120; // 30px padding from left edge of texture
+  // Position text vertically centered in texture area
+  // For 1080p: texture bottom at 1080-20=1060, top at 1060-300=760
+  // Name near top of texture, type below it
+  const nameY = bgY + 190; // 230px from bottom = near top of 300px texture
+  const typeY = bgY + 140; // 160px from bottom = middle area of texture
+  
+  // Filter complex: overlay texture, then draw text
+  // Loop the image and apply fade for proper duration control
+  const filterComplex = [
+    // Loop the image, set framerate, trim to needed duration, apply fade
+    `[1:v]loop=loop=-1:size=1,setpts=N/60/TB,trim=duration=${totalDuration},format=rgba,fade=t=in:st=0:d=${fadeDuration}:alpha=1,fade=t=out:st=${fadeOutStart}:d=${fadeDuration}:alpha=1[ovr]`,
+    // Overlay texture on video at bottom-left
+    `[0:v][ovr]overlay=x=${bgX}:y=H-h-${bgY}:eof_action=pass,` +
+    // Player name with fade (positioned at top of texture)
+    `drawtext=fontfile='${fontFile}':text='${escapedName}':fontcolor=white:fontsize=48:x=${textX}:y=h-${nameY}:alpha='${alphaExpr}',` +
+    // Highlight type with fade (positioned below name)
+    `drawtext=fontfile='${fontFile}':text='${escapedType}':fontcolor=gold:fontsize=28:x=${textX}:y=h-${typeY}:alpha='${alphaExpr}'[vout]`,
+  ].join(';');
+  
+  // Get actual texture path (without escaping for -i argument)
+  const textureInputPath = path.join(texturesDir, 'nickname-background.png');
+  
+  console.log(`    Overlay: "${playerName}" - "${highlightType}"`);
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', inputPath,
+      '-i', textureInputPath,
+      '-filter_complex', filterComplex,
+      '-map', '[vout]',
+      '-map', '0:a',
+      '-c:v', 'libx264',
+      '-crf', crf.toString(),
+      '-preset', 'medium',
+      '-c:a', 'copy',
+      '-y',
+      tempOutput,
+    ];
+    
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    activeFfmpegProcess = ffmpeg;
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      activeFfmpegProcess = null;
+      if (code === 0) {
+        // Replace original with overlay version
+        try {
+          fs.unlinkSync(inputPath);
+          fs.renameSync(tempOutput, inputPath);
+          resolve(inputPath);
+        } catch (err) {
+          reject(new Error(`Failed to replace video: ${err.message}`));
+        }
+      } else {
+        // Clean up temp file on failure
+        try { fs.unlinkSync(tempOutput); } catch (e) { /* ignore */ }
+        reject(new Error(`FFmpeg overlay failed: ${errorOutput.slice(-500)}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      activeFfmpegProcess = null;
+      reject(new Error(`Failed to run FFmpeg for overlay: ${err.message}`));
+    });
+  });
 }
 
 /**
@@ -906,10 +1060,11 @@ function cleanupTgaFiles(folder) {
  * @param {string} [options.playerFilter] Optional Steam ID to filter by player
  * @param {string} [options.idFilter] Optional highlight ID to record only one clip
  * @param {number} [options.speedupMultiplier] Optional speed multiplier for clutch gaps
+ * @param {boolean} [options.showOverlay] Whether to show player name and highlight type overlay
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, speedupMultiplier } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, speedupMultiplier, showOverlay } = options;
   
   const recordedClips = [];
   let clipIndex = 0;
@@ -961,6 +1116,7 @@ async function recordAllHighlights(options) {
         outputPath,
         clipIndex,
         speedupMultiplier,
+        showOverlay,
       });
       
       recordedClips.push(clipPath);

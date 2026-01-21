@@ -79,6 +79,7 @@ program
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
   .option('--speedup <multiplier>', 'Speed up clutch gaps (e.g., 4 for 4x speed)', parseFloat)
+  .option('--overlay', 'Show player name and highlight type overlay (fade in/out)')
   .action(recordCommand);
 
 // Merge command - merge recorded clips into a single video
@@ -343,6 +344,7 @@ async function recordCommand(options) {
   const playerFilter = options.player || null;
   const idFilter = options.id || null;
   const speedupMultiplier = options.speedup || null;
+  const showOverlay = options.overlay || false;
 
   // Validate highlights.json exists
   if (!fs.existsSync(highlightsPath)) {
@@ -418,6 +420,9 @@ async function recordCommand(options) {
   if (speedupMultiplier) {
     console.log(`Speed-up multiplier: ${speedupMultiplier}x for clutch gaps`);
   }
+  if (showOverlay) {
+    console.log(`Overlay: Player name and highlight type (fade in/out)`);
+  }
 
   // Ensure output directory exists
   if (!fs.existsSync(outputPath)) {
@@ -435,6 +440,7 @@ async function recordCommand(options) {
       playerFilter,
       idFilter,
       speedupMultiplier,
+      showOverlay,
     });
 
     if (recordedClips.length === 0) {
