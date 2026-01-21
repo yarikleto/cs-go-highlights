@@ -96,7 +96,7 @@ const DEFAULT_SETTINGS = {
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, speedupMultiplier, showOverlay } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, speedupMultiplier, showOverlay, slowmoFactor } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -263,6 +263,33 @@ async function recordHighlight(options) {
     console.log(`    [${stepNum}/${stepNum}] Overlay applied successfully`);
   }
   
+  // Apply slow motion if enabled and highlight has a qualifying kill
+  const slowmotion = highlight.playback.slowmotion;
+  if (slowmoFactor && slowmotion) {
+    // Calculate step number based on previous steps
+    let stepNum = 5;
+    if (speedupMultiplier && speedupSegments && speedupSegments.length > 0) stepNum++;
+    if (showOverlay) stepNum++;
+    
+    console.log(`    [${stepNum}/${stepNum}] Applying slow motion (${slowmoFactor}x at ${slowmotion.reason})...`);
+    
+    // Convert tick-based timing to seconds (relative to playback start)
+    const tickRate = highlight.tickRate || 128;
+    const playbackStartTick = highlight.playback.startTick;
+    const slowmoStartTime = (slowmotion.startTick - playbackStartTick) / tickRate;
+    const slowmoEndTime = (slowmotion.endTick - playbackStartTick) / tickRate;
+    
+    await applySlowMotionToVideo({
+      inputPath: clipOutputPath,
+      startTime: slowmoStartTime,
+      endTime: slowmoEndTime,
+      factor: slowmoFactor,
+      crf: DEFAULT_SETTINGS.crf,
+    });
+    
+    console.log(`    [${stepNum}/${stepNum}] Slow motion applied successfully`);
+  }
+  
   return clipOutputPath;
 }
 
@@ -416,6 +443,158 @@ async function applyOverlayToVideo(options) {
       reject(new Error(`Failed to run FFmpeg for overlay: ${err.message}`));
     });
   });
+}
+
+/**
+ * Applies slow motion effect with impact style:
+ * - Instant slowdown at kill moment
+ * - Gradual ramp-up back to normal speed
+ * @param {Object} options - Options for slow motion
+ * @param {string} options.inputPath - Path to input video
+ * @param {number} options.startTime - Start time in seconds (kill moment)
+ * @param {number} options.endTime - End time in seconds
+ * @param {number} options.factor - Slow motion factor at peak (e.g., 0.25 = quarter speed)
+ * @param {number} options.crf - Video quality (CRF value)
+ */
+async function applySlowMotionToVideo(options) {
+  const { inputPath, startTime, endTime, factor, crf } = options;
+  
+  // Create temp output path
+  const tempOutput = inputPath.replace('.mp4', '_slowmo.mp4');
+  
+  // Impact slowmo: instant max slowdown, then gradual ramp to normal
+  // Duration of slowmo effect (from kill to end)
+  const slowmoDuration = endTime - startTime;
+  
+  // Create graduated speed segments for smooth ramp-up
+  // Start at 'factor', end at 1.0 (normal speed)
+  const numSegments = 12; // More segments = smoother transition
+  const segmentDuration = slowmoDuration / numSegments;
+  
+  // Calculate speed for each segment using sine easing for ultra-smooth transition
+  const speeds = [];
+  for (let i = 0; i < numSegments; i++) {
+    const progress = i / (numSegments - 1); // 0 to 1
+    // Sine ease-in: very smooth, stays slow longer, then accelerates
+    const eased = 1 - Math.cos((progress * Math.PI) / 2);
+    const speed = factor + (1.0 - factor) * eased;
+    speeds.push(speed);
+  }
+  
+  // Build filter for multi-segment slowmo with ramp
+  const numParts = numSegments + 2; // before + N slowmo segments + after
+  
+  // Split video and audio
+  const filters = [
+    `[0:v]split=${numParts}[${Array.from({length: numParts}, (_, i) => `v${i}`).join('][')}]`,
+    `[0:a]asplit=${numParts}[${Array.from({length: numParts}, (_, i) => `a${i}`).join('][')}]`,
+  ];
+  
+  // Before segment (normal speed)
+  filters.push(`[v0]trim=0:${startTime},setpts=PTS-STARTPTS[vbefore]`);
+  filters.push(`[a0]atrim=0:${startTime},asetpts=PTS-STARTPTS[abefore]`);
+  
+  // Slowmo segments with graduated speeds
+  const slowmoOutputs = [];
+  for (let i = 0; i < numSegments; i++) {
+    const segStart = startTime + i * segmentDuration;
+    const segEnd = startTime + (i + 1) * segmentDuration;
+    const speed = speeds[i];
+    const setptsMultiplier = (1 / speed).toFixed(4);
+    const atempoChain = buildAtempoChain(speed);
+    
+    filters.push(`[v${i + 1}]trim=${segStart}:${segEnd},setpts=${setptsMultiplier}*(PTS-STARTPTS)[vslowmo${i}]`);
+    filters.push(`[a${i + 1}]atrim=${segStart}:${segEnd},asetpts=PTS-STARTPTS,${atempoChain}[aslowmo${i}]`);
+    slowmoOutputs.push(`[vslowmo${i}][aslowmo${i}]`);
+  }
+  
+  // After segment (normal speed)
+  filters.push(`[v${numSegments + 1}]trim=${endTime},setpts=PTS-STARTPTS[vafter]`);
+  filters.push(`[a${numSegments + 1}]atrim=${endTime},asetpts=PTS-STARTPTS[aafter]`);
+  
+  // Concatenate all: before + slowmo segments + after
+  const concatInputs = `[vbefore][abefore]${slowmoOutputs.join('')}[vafter][aafter]`;
+  filters.push(`${concatInputs}concat=n=${numSegments + 2}:v=1:a=1[outv][outa]`);
+  
+  const filterComplex = filters.join(';');
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', inputPath,
+      '-filter_complex', filterComplex,
+      '-map', '[outv]',
+      '-map', '[outa]',
+      '-c:v', 'libx264',
+      '-crf', crf.toString(),
+      '-preset', 'medium',
+      '-c:a', 'aac',
+      '-b:a', '320k',
+      '-y',
+      tempOutput,
+    ];
+    
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    activeFfmpegProcess = ffmpeg;
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      activeFfmpegProcess = null;
+      if (code === 0) {
+        // Replace original with slow motion version
+        try {
+          fs.unlinkSync(inputPath);
+          fs.renameSync(tempOutput, inputPath);
+          resolve(inputPath);
+        } catch (err) {
+          reject(new Error(`Failed to replace video: ${err.message}`));
+        }
+      } else {
+        // Clean up temp file on failure
+        try { fs.unlinkSync(tempOutput); } catch (e) { /* ignore */ }
+        reject(new Error(`FFmpeg slow motion failed: ${errorOutput.slice(-500)}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      activeFfmpegProcess = null;
+      reject(new Error(`Failed to run FFmpeg for slow motion: ${err.message}`));
+    });
+  });
+}
+
+/**
+ * Builds atempo filter chain for audio slowdown
+ * atempo only supports 0.5-2.0, so we chain multiple for extreme values
+ * @param {number} factor - Speed factor (e.g., 0.25 for quarter speed)
+ * @returns {string} atempo filter chain
+ */
+function buildAtempoChain(factor) {
+  const filters = [];
+  let remaining = factor;
+  
+  while (remaining < 0.5) {
+    filters.push('atempo=0.5');
+    remaining *= 2;
+  }
+  
+  while (remaining > 2.0) {
+    filters.push('atempo=2.0');
+    remaining /= 2;
+  }
+  
+  if (remaining !== 1.0) {
+    filters.push(`atempo=${remaining}`);
+  }
+  
+  return filters.length > 0 ? filters.join(',') : 'atempo=1.0';
 }
 
 /**
@@ -1064,7 +1243,7 @@ function cleanupTgaFiles(folder) {
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, speedupMultiplier, showOverlay } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, speedupMultiplier, showOverlay, slowmoFactor } = options;
   
   const recordedClips = [];
   let clipIndex = 0;
@@ -1117,6 +1296,7 @@ async function recordAllHighlights(options) {
         clipIndex,
         speedupMultiplier,
         showOverlay,
+        slowmoFactor,
       });
       
       recordedClips.push(clipPath);

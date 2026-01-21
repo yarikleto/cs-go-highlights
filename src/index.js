@@ -24,6 +24,11 @@ const DEFAULT_CONFIG = {
     minGapDuration: 4,      // minimum gap duration (seconds) to trigger speed-up
   },
   
+  // Slow motion settings
+  slowmo: {
+    duration: 1,          // seconds for the slowmo ramp-up effect (from peak slowdown back to normal)
+  },
+  
   // Detection settings
   detection: {
     maxDelay: 15,           // seconds between kills for series
@@ -80,6 +85,7 @@ program
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
   .option('--speedup <multiplier>', 'Speed up clutch gaps (e.g., 4 for 4x speed)', parseFloat)
   .option('--overlay', 'Show player name and highlight type overlay (fade in/out)')
+  .option('--slowmo <factor>', 'Slow motion on last kill if headshot/noscope (e.g., 0.5 for half speed)', parseFloat)
   .action(recordCommand);
 
 // Merge command - merge recorded clips into a single video
@@ -285,6 +291,30 @@ async function analyzeCommand(options) {
           }
         }
         
+        // Detect slow motion moment: last kill if headshot or noscope sniper
+        // Impact style: instant slowdown at kill, then gradual ramp back to normal
+        let slowmotion = null;
+        if (h.type === 'kill-series' && h.kills && h.kills.length > 0) {
+          const lastKill = h.kills[h.kills.length - 1];
+          const qualifiesForSlowmo = lastKill.headshot === true || lastKill.noscope === true;
+          
+          if (qualifiesForSlowmo) {
+            // Slow motion starts AT the kill and ramps back to normal
+            const slowmoDuration = DEFAULT_CONFIG.slowmo.duration;
+            const slowmoStartTick = lastKill.tick; // Start exactly at kill moment
+            const slowmoEndTick = lastKill.tick + Math.round(slowmoDuration * tickRate);
+            
+            slowmotion = {
+              tick: lastKill.tick,
+              startTick: Math.max(slowmoStartTick, playbackStartTick),
+              endTick: Math.min(slowmoEndTick, playbackEndTick),
+              durationSeconds: slowmoDuration,
+              reason: lastKill.noscope ? 'noscope' : 'headshot',
+              weapon: lastKill.weapon,
+            };
+          }
+        }
+        
         return {
           id,
           ...h,
@@ -297,6 +327,7 @@ async function analyzeCommand(options) {
             paddingBefore: paddingBefore,
             paddingAfter: paddingAfter,
             speedupSegments, // Segments to speed up (gaps between kills)
+            slowmotion, // Slow motion moment for impressive last kill
           },
         };
       });
@@ -345,6 +376,7 @@ async function recordCommand(options) {
   const idFilter = options.id || null;
   const speedupMultiplier = options.speedup || null;
   const showOverlay = options.overlay || false;
+  const slowmoFactor = options.slowmo || null;
 
   // Validate highlights.json exists
   if (!fs.existsSync(highlightsPath)) {
@@ -423,6 +455,9 @@ async function recordCommand(options) {
   if (showOverlay) {
     console.log(`Overlay: Player name and highlight type (fade in/out)`);
   }
+  if (slowmoFactor) {
+    console.log(`Slow motion: ${slowmoFactor}x on last kill (headshot/noscope)`);
+  }
 
   // Ensure output directory exists
   if (!fs.existsSync(outputPath)) {
@@ -441,6 +476,7 @@ async function recordCommand(options) {
       idFilter,
       speedupMultiplier,
       showOverlay,
+      slowmoFactor,
     });
 
     if (recordedClips.length === 0) {

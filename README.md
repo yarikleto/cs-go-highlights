@@ -80,6 +80,7 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
 | `--speedup <multiplier>` | No | - | Speed up gaps between kills (e.g., `4` for 4x speed) |
 | `--overlay` | No | - | Show player name and highlight type overlay (fade in/out) |
+| `--slowmo <factor>` | No | - | Slow motion on last kill if headshot/noscope (e.g., `0.5` for half speed) |
 
 #### Recording Settings
 
@@ -171,6 +172,34 @@ Combine with speedup:
 
 ```bash
 node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4 --overlay
+```
+
+#### Slow Motion
+
+When using `--slowmo`, an "impact" slow motion effect is applied to the last kill in kill-series highlights if the kill is:
+
+- A **headshot**, OR
+- A **noscope** sniper shot
+
+**Effect style:**
+- **Instant slowdown** at the kill moment (dramatic impact)
+- **Gradual ramp-up** back to normal speed over 0.6 seconds
+- Creates a cinematic "bullet time" effect
+
+**Settings:**
+- **Factor**: Peak slowdown (e.g., `0.25` = quarter speed at impact, then ramp to normal)
+- Applies to both video and audio
+
+Example with slow motion:
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --slowmo 0.5
+```
+
+Combine all effects:
+
+```bash
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4 --overlay --slowmo 0.5
 ```
 
 #### Output
