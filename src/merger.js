@@ -119,7 +119,8 @@ async function applyFadeToSingleClip(inputPath, outputPath, fadeDuration) {
 }
 
 /**
- * Merges clips with fade in/out transitions using FFmpeg complex filter
+ * Merges clips with crossfade transitions using FFmpeg xfade filter
+ * Clips blend into each other without black screen
  */
 async function runFfmpegMergeWithTransitions(clipPaths, outputPath, fadeDuration) {
   // Get durations of all clips
@@ -128,47 +129,50 @@ async function runFfmpegMergeWithTransitions(clipPaths, outputPath, fadeDuration
   // Build input arguments
   const inputArgs = clipPaths.flatMap(clip => ['-i', clip]);
   
-  // Build complex filter for fades
-  const videoFilters = [];
-  const audioFilters = [];
-  const videoOutputs = [];
-  const audioOutputs = [];
+  // Build xfade filter chain for smooth crossfades between clips
+  // xfade blends two videos together during transition (no black screen)
+  const filters = [];
   
-  for (let i = 0; i < clipPaths.length; i++) {
-    const duration = durations[i];
-    const fadeOutStart = Math.max(0, duration - fadeDuration);
+  // First clip: fade in from black at start
+  filters.push(`[0:v]fade=t=in:st=0:d=${fadeDuration}[v0]`);
+  filters.push(`[0:a]afade=t=in:st=0:d=${fadeDuration}[a0]`);
+  
+  // Calculate xfade offsets (when each transition starts)
+  // Each xfade reduces total duration by fadeDuration
+  let videoChain = '[v0]';
+  let audioChain = '[a0]';
+  let cumulativeOffset = durations[0] - fadeDuration;
+  
+  for (let i = 1; i < clipPaths.length; i++) {
+    const isLast = i === clipPaths.length - 1;
+    const lastFadeOut = isLast ? `,fade=t=out:st=${durations[i] - fadeDuration}:d=${fadeDuration}` : '';
+    const lastAudioFadeOut = isLast ? `,afade=t=out:st=${durations[i] - fadeDuration}:d=${fadeDuration}` : '';
     
-    // First clip: only fade out at end
-    // Middle clips: fade in at start, fade out at end
-    // Last clip: only fade in at start
-    let vFilter = '';
-    let aFilter = '';
+    // Prepare current clip (add fade out if last)
+    filters.push(`[${i}:v]null${lastFadeOut}[vin${i}]`);
+    filters.push(`[${i}:a]anull${lastAudioFadeOut}[ain${i}]`);
     
-    if (i === 0) {
-      // First clip: fade out only
-      vFilter = `[${i}:v]fade=t=out:st=${fadeOutStart}:d=${fadeDuration}[v${i}]`;
-      aFilter = `[${i}:a]afade=t=out:st=${fadeOutStart}:d=${fadeDuration}[a${i}]`;
-    } else if (i === clipPaths.length - 1) {
-      // Last clip: fade in only
-      vFilter = `[${i}:v]fade=t=in:st=0:d=${fadeDuration}[v${i}]`;
-      aFilter = `[${i}:a]afade=t=in:st=0:d=${fadeDuration}[a${i}]`;
-    } else {
-      // Middle clips: both fade in and fade out
-      vFilter = `[${i}:v]fade=t=in:st=0:d=${fadeDuration},fade=t=out:st=${fadeOutStart}:d=${fadeDuration}[v${i}]`;
-      aFilter = `[${i}:a]afade=t=in:st=0:d=${fadeDuration},afade=t=out:st=${fadeOutStart}:d=${fadeDuration}[a${i}]`;
-    }
+    // xfade with previous result
+    const xfadeOffset = Math.max(0, cumulativeOffset);
+    filters.push(`${videoChain}[vin${i}]xfade=transition=fade:duration=${fadeDuration}:offset=${xfadeOffset}[vx${i}]`);
+    filters.push(`${audioChain}[ain${i}]acrossfade=d=${fadeDuration}[ax${i}]`);
     
-    videoFilters.push(vFilter);
-    audioFilters.push(aFilter);
-    videoOutputs.push(`[v${i}]`);
-    audioOutputs.push(`[a${i}]`);
+    videoChain = `[vx${i}]`;
+    audioChain = `[ax${i}]`;
+    
+    // Update cumulative offset for next transition
+    cumulativeOffset += durations[i] - fadeDuration;
   }
   
-  // Concat all streams
-  const concatVideo = `${videoOutputs.join('')}concat=n=${clipPaths.length}:v=1:a=0[vout]`;
-  const concatAudio = `${audioOutputs.join('')}concat=n=${clipPaths.length}:v=0:a=1[aout]`;
+  // Final output labels
+  const finalVideoLabel = clipPaths.length > 1 ? `[vx${clipPaths.length - 1}]` : '[v0]';
+  const finalAudioLabel = clipPaths.length > 1 ? `[ax${clipPaths.length - 1}]` : '[a0]';
   
-  const filterComplex = [...videoFilters, ...audioFilters, concatVideo, concatAudio].join(';');
+  // Rename final outputs to [vout] and [aout]
+  filters.push(`${finalVideoLabel}null[vout]`);
+  filters.push(`${finalAudioLabel}anull[aout]`);
+  
+  const filterComplex = filters.join(';');
   
   return new Promise((resolve, reject) => {
     const args = [

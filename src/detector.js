@@ -1,9 +1,10 @@
 // Default priority levels for highlights (used for collision resolution)
+// Higher priority wins when highlights overlap
 const PRIORITIES = {
-  'kill-series': 2,
+  'clutch': 2,
   'knife': 3,
   'collateral': 4,
-  'clutch': 5,
+  'kill-series': 5,
 };
 
 // Default point values for kills (higher = more impressive)

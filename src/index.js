@@ -7,8 +7,9 @@ const crypto = require('crypto');
 const { parseDemo } = require('./parser');
 const { detectHighlights } = require('./detector');
 const { resolveCollisions } = require('./resolver');
-const { recordAllHighlights } = require('./recorder');
+const { recordAllHighlights, postprocessClip } = require('./recorder');
 const { mergeClips, cleanupTempFiles, generateSummary } = require('./merger');
+const { MusicPlaylist, saveMusicMapping, loadMusicMapping, resyncMusicMapping } = require('./music');
 
 // Default configuration (full config for generation)
 const DEFAULT_CONFIG = {
@@ -30,8 +31,17 @@ const DEFAULT_CONFIG = {
     duration: 1,          // seconds for the slowmo ramp-up effect (from peak slowdown back to normal)
     contrast: 1.2,        // peak contrast (1.0 = normal, higher = more punch)
     brightness: 0.05,     // peak brightness boost (0 = none)
-    redBoost: 0.15,       // warm/red shift in midtones (0 = none, 0.2 = strong red)
+    redBoost: 0.2,       // warm/red shift in midtones (0 = none, 0.2 = strong red)
     saturation: 1.1,      // slight saturation boost (1.0 = normal)
+  },
+  
+  // Music overlay settings
+  music: {
+    folder: './music',    // path to folder with music tracks
+    volume: 0.7,          // music volume (0-1)
+    gameVolume: 1.0,      // game audio volume (0-1)
+    fadeDuration: 2,      // fade in/out duration in seconds (at start and end of each clip)
+    enabled: true,        // enable music overlay by default
   },
   
   // Detection settings
@@ -56,11 +66,12 @@ const DEFAULT_CONFIG = {
   
   // Highlight priorities (higher = more important)
   // Used for collision resolution between same player's highlights
+  // Higher priority wins when highlights overlap
   priorities: {
-    'kill-series': 2,
+    'clutch': 2,
     'knife': 3,
     'collateral': 4,
-    'clutch': 5,
+    'kill-series': 5,
   },
 };
 
@@ -75,12 +86,20 @@ program
   .description('Analyze demo files and detect highlights')
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
   .option('--output <path>', 'Output folder for highlights.json', './output')
+  .option('--reset-music', 'Reset music mapping (discard existing offsets)')
   .action(analyzeCommand);
+
+// Resync music command - recalculate music times based on manual offsets
+program
+  .command('resync-music')
+  .description('Recalculate music startTime/endTime based on manual offset values in music-mapping.json')
+  .option('--mapping <path>', 'Path to music-mapping.json', './output/music-mapping.json')
+  .action(resyncMusicCommand);
 
 // Record command - record highlights using HLAE
 program
   .command('record')
-  .description('Record highlights using HLAE (produces individual clips)')
+  .description('Record highlights using HLAE (produces raw clips without effects)')
   .requiredOption('--highlights <path>', 'Path to highlights.json file')
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
   .requiredOption('--hlae <path>', 'Path to HLAE executable (hlae.exe)')
@@ -88,10 +107,24 @@ program
   .option('--output <path>', 'Output folder for clips', './output')
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
+  .action(recordCommand);
+
+// Postprocess command - apply effects to recorded clips
+program
+  .command('postprocess')
+  .description('Apply effects to recorded clips (slowmo, speedup, music, overlay)')
+  .requiredOption('--highlights <path>', 'Path to highlights.json file')
+  .option('--clips <path>', 'Path to folder containing raw clips', './output/clips')
+  .option('--output <path>', 'Output folder for processed clips (default: ./output/clips_processed)')
   .option('--speedup <multiplier>', 'Speed up clutch gaps (e.g., 4 for 4x speed)', parseFloat)
   .option('--overlay', 'Show player name and highlight type overlay (fade in/out)')
   .option('--slowmo <factor>', 'Slow motion on last kill if headshot/noscope (e.g., 0.5 for half speed)', parseFloat)
-  .action(recordCommand);
+  .option('--music <folder>', 'Path to music folder (default: ./music)')
+  .option('--music-volume <percent>', 'Music volume 0-100 (default: 70)', parseFloat)
+  .option('--no-music', 'Disable music overlay')
+  .option('--force', 'Re-process all clips even if already processed')
+  .option('--id <highlightId>', 'Process only a specific highlight by ID')
+  .action(postprocessCommand);
 
 // Merge command - merge recorded clips into a single video
 program
@@ -112,11 +145,20 @@ program
   .option('--output <path>', 'Output path for compressed video')
   .action(compressCommand);
 
+// Player kills command - show all kills by a player in a demo
+program
+  .command('player-kills')
+  .description('Show all kills by a player in a demo file')
+  .requiredOption('--demo <path>', 'Path to demo file (.dem)')
+  .requiredOption('--steamid <id>', 'Player Steam ID (64-bit format)')
+  .action(playerKillsCommand);
+
 program.parse(process.argv);
 
 async function analyzeCommand(options) {
   const demosPath = path.resolve(options.demos);
   const outputPath = path.resolve(options.output);
+  const resetMusic = options.resetMusic || false;
   
   // Validate demos folder exists
   if (!fs.existsSync(demosPath)) {
@@ -262,16 +304,52 @@ async function analyzeCommand(options) {
           const minGapTicks = Math.round(minGapSeconds * tickRate);
           speedupSegments = [];
           
-          // Build list of "action points" - when to stop speedup
-          // Use firstShotTick if available (when shooting started), otherwise use kill tick
-          const actionPoints = h.kills.map(k => {
-            // Use firstShotTick if available and reasonable, otherwise fall back to kill tick with buffer
-            const shootingStart = k.firstShotTick || (k.tick - bufferTicks);
-            return {
-              startAction: shootingStart - bufferTicks, // Stop speedup before shooting starts
-              endAction: k.tick + bufferTicks,          // Resume speedup after kill
-            };
-          });
+          // Get ALL shots by this player within playback range
+          const playerSteamId = h.player.steamId;
+          const allPlayerShots = (demoData.shotsByPlayer && playerSteamId && demoData.shotsByPlayer[playerSteamId]) 
+            ? demoData.shotsByPlayer[playerSteamId].filter(tick => tick >= playbackStartTick && tick <= playbackEndTick)
+            : [];
+          
+          // Combine shots with kill ticks (for knife kills that don't have weapon_fire events)
+          // This ensures knife kills and other melee attacks are also action points
+          const killTicks = h.kills.map(k => k.tick);
+          const allActionTicks = [...allPlayerShots, ...killTicks].sort((a, b) => a - b);
+          
+          // Remove duplicates (kills that also have shots)
+          const uniqueActionTicks = allActionTicks.filter((tick, i, arr) => 
+            i === 0 || tick !== arr[i - 1]
+          );
+          
+          // Group consecutive action ticks into "action periods"
+          // Ticks within 1 second of each other are grouped together
+          const actionGroupGap = tickRate * 1; // 1 second gap to consider separate periods
+          const actionPeriods = [];
+          
+          if (uniqueActionTicks.length > 0) {
+            let periodStart = uniqueActionTicks[0];
+            let periodEnd = uniqueActionTicks[0];
+            
+            for (let i = 1; i < uniqueActionTicks.length; i++) {
+              const tick = uniqueActionTicks[i];
+              if (tick - periodEnd <= actionGroupGap) {
+                // Continue current period
+                periodEnd = tick;
+              } else {
+                // End current period, start new one
+                actionPeriods.push({ start: periodStart, end: periodEnd });
+                periodStart = tick;
+                periodEnd = tick;
+              }
+            }
+            // Add final period
+            actionPeriods.push({ start: periodStart, end: periodEnd });
+          }
+          
+          // Build action points from action periods (with buffer)
+          const actionPoints = actionPeriods.map(period => ({
+            startAction: period.start - bufferTicks,  // Stop speedup before action starts
+            endAction: period.end + bufferTicks,      // Resume speedup after action ends
+          }));
           
           // Find gaps between action moments
           // Speedup can only start after startDelay from highlight beginning
@@ -291,11 +369,11 @@ async function analyzeCommand(options) {
               });
             }
             
-            // Move position to after this kill (but not before the start delay point)
+            // Move position to after this action (but not before the start delay point)
             currentPos = Math.max(action.endAction, playbackStartTick + startDelayTicks);
           }
           
-          // Final segment: from last kill to end
+          // Final segment: from last action to end
           if (playbackEndTick - currentPos >= minGapTicks) {
             speedupSegments.push({
               startTick: currentPos,
@@ -311,27 +389,44 @@ async function analyzeCommand(options) {
           }
         }
         
-        // Detect slow motion moment: last kill if headshot or noscope sniper
+        // Detect slow motion moment: find the LAST headshot/noscope kill in the series
+        // Example: [body, headshot, body] -> slowmo on the headshot
         // Impact style: instant slowdown at kill, then gradual ramp back to normal
-        // Works for both kill-series and clutches
+        // Works for kill-series, clutches, and collaterals
         let slowmotion = null;
-        if ((h.type === 'kill-series' || h.type === 'clutch') && h.kills && h.kills.length > 0) {
-          const lastKill = h.kills[h.kills.length - 1];
-          const qualifiesForSlowmo = lastKill.headshot === true || lastKill.noscope === true;
+        if ((h.type === 'kill-series' || h.type === 'clutch' || h.type === 'collateral') && h.kills && h.kills.length > 0) {
+          // For collaterals, ALWAYS apply slowmo (collaterals are always impressive)
+          // For series/clutch, check if last kill is headshot or noscope
+          let qualifyingKill = null;
           
-          if (qualifiesForSlowmo) {
+          if (h.type === 'collateral') {
+            // Collaterals always get slowmo - use first kill (all same tick anyway)
+            qualifyingKill = h.kills[0];
+          } else {
+            // For series/clutch, find the LAST headshot/noscope kill (iterate from end)
+            // Example: [body, headshot, body] -> slowmo on the headshot (index 1)
+            for (let i = h.kills.length - 1; i >= 0; i--) {
+              const kill = h.kills[i];
+              if (kill.headshot === true || kill.noscope === true) {
+                qualifyingKill = kill;
+                break;
+              }
+            }
+          }
+          
+          if (qualifyingKill) {
             // Slow motion starts AT the kill and ramps back to normal
             const slowmoDuration = DEFAULT_CONFIG.slowmo.duration;
-            const slowmoStartTick = lastKill.tick; // Start exactly at kill moment
-            const slowmoEndTick = lastKill.tick + Math.round(slowmoDuration * tickRate);
+            const slowmoStartTick = qualifyingKill.tick; // Start exactly at kill moment
+            const slowmoEndTick = qualifyingKill.tick + Math.round(slowmoDuration * tickRate);
             
             slowmotion = {
-              tick: lastKill.tick,
+              tick: qualifyingKill.tick,
               startTick: Math.max(slowmoStartTick, playbackStartTick),
               endTick: Math.min(slowmoEndTick, playbackEndTick),
               durationSeconds: slowmoDuration,
-              reason: lastKill.noscope ? 'noscope' : 'headshot',
-              weapon: lastKill.weapon,
+              reason: h.type === 'collateral' ? 'collateral' : (qualifyingKill.noscope ? 'noscope' : 'headshot'),
+              weapon: qualifyingKill.weapon,
               // Visual effects at peak (fade out with slowmo)
               contrast: DEFAULT_CONFIG.slowmo.contrast,
               brightness: DEFAULT_CONFIG.slowmo.brightness,
@@ -390,6 +485,150 @@ async function analyzeCommand(options) {
   console.log(`\nResults written to: ${outputFile}`);
   console.log(`Total highlights: ${results.summary.totalHighlights}`);
   console.log('By type:', results.summary.byType);
+
+  // Generate music mapping if music folder exists
+  const musicFolder = path.resolve(DEFAULT_CONFIG.music.folder);
+  if (fs.existsSync(musicFolder) && DEFAULT_CONFIG.music.enabled) {
+    console.log('\n--- Music Mapping ---');
+    try {
+      const playlist = new MusicPlaylist(musicFolder);
+      await playlist.analyze();
+
+      // Collect all highlights from all demos with their tickRate
+      const allHighlights = [];
+      let commonTickRate = 128;
+      
+      for (const demo of results.demos) {
+        if (demo.highlights) {
+          commonTickRate = demo.tickRate || 128;
+          for (const h of demo.highlights) {
+            allHighlights.push(h);
+          }
+        }
+      }
+
+      if (allHighlights.length > 0) {
+        const musicMappingFile = path.join(outputPath, 'music-mapping.json');
+        
+        // Load existing mapping to preserve offsets (unless --reset-music is used)
+        let existingOffsets = {};
+        if (!resetMusic && fs.existsSync(musicMappingFile)) {
+          try {
+            const existingMapping = loadMusicMapping(musicMappingFile);
+            if (existingMapping && existingMapping.clips) {
+              for (const [clipId, clipData] of Object.entries(existingMapping.clips)) {
+                if (clipData.offset && clipData.offset !== 0) {
+                  existingOffsets[clipId] = clipData.offset;
+                }
+              }
+              if (Object.keys(existingOffsets).length > 0) {
+                console.log(`  Preserving ${Object.keys(existingOffsets).length} existing offset(s)`);
+              }
+            }
+          } catch (e) {
+            // Ignore errors loading existing mapping
+          }
+        }
+        
+        let musicMapping = playlist.generateMapping(allHighlights, commonTickRate);
+        
+        // Restore preserved offsets to new mapping
+        let hasOffsets = false;
+        for (const [clipId, offset] of Object.entries(existingOffsets)) {
+          if (musicMapping.clips[clipId]) {
+            musicMapping.clips[clipId].offset = offset;
+            hasOffsets = true;
+          }
+        }
+        
+        // If there are offsets, recalculate startTime/endTime to account for them
+        if (hasOffsets) {
+          console.log(`  Recalculating music times with preserved offsets...`);
+          musicMapping = resyncMusicMapping(musicMapping);
+        }
+        
+        saveMusicMapping(musicMappingFile, musicMapping);
+        console.log(`  Music mapping written to: ${musicMappingFile}`);
+        console.log(`  Mapped ${Object.keys(musicMapping.clips).length} clips to music`);
+        if (resetMusic) {
+          console.log(`  Offsets reset (--reset-music flag used)`);
+        } else {
+          console.log(`  Tip: Add "offset" field to any clip to shift its music timing, then run 'resync-music'`);
+        }
+      } else {
+        console.log('  No highlights to map music to');
+      }
+    } catch (error) {
+      console.error(`  Music mapping error: ${error.message}`);
+      console.log('  Continuing without music mapping...');
+    }
+  } else if (!fs.existsSync(musicFolder)) {
+    console.log(`\nNote: Music folder not found (${musicFolder}). Skipping music mapping.`);
+    console.log('  Create a "music" folder with audio files to enable music overlay.');
+  }
+}
+
+/**
+ * Resync music command - recalculate music times based on offsets
+ */
+async function resyncMusicCommand(options) {
+  const mappingPath = path.resolve(options.mapping);
+  
+  console.log('\n=== Resync Music Mapping ===\n');
+  
+  // Check if mapping file exists
+  if (!fs.existsSync(mappingPath)) {
+    console.error(`Error: Music mapping file not found: ${mappingPath}`);
+    console.log('  Run "analyze" command first to generate music-mapping.json');
+    process.exit(1);
+  }
+  
+  // Load mapping
+  const mapping = loadMusicMapping(mappingPath);
+  if (!mapping) {
+    console.error('Error: Failed to load music mapping');
+    process.exit(1);
+  }
+  
+  const clipCount = Object.keys(mapping.clips).length;
+  console.log(`Loaded ${clipCount} clips from mapping`);
+  
+  // Count clips with non-zero offsets
+  const clipsWithOffsets = Object.entries(mapping.clips)
+    .filter(([id, clip]) => clip.offset && clip.offset !== 0);
+  
+  if (clipsWithOffsets.length === 0) {
+    console.log('\nNo offsets found. Add "offset" field to clips to shift their music timing.');
+    console.log('Example: "offset": 10 will shift music 10 seconds forward');
+    console.log('         "offset": -5 will shift music 5 seconds backward');
+    return;
+  }
+  
+  console.log(`\nClips with offsets:`);
+  for (const [id, clip] of clipsWithOffsets) {
+    const sign = clip.offset > 0 ? '+' : '';
+    console.log(`  ${id}: ${sign}${clip.offset}s`);
+  }
+  
+  // Resync mapping
+  console.log('\nRecalculating music times...');
+  
+  try {
+    const updatedMapping = resyncMusicMapping(mapping);
+    
+    // Save updated mapping
+    saveMusicMapping(mappingPath, updatedMapping);
+    
+    console.log('\nMusic mapping updated successfully!');
+    console.log(`\nUpdated times:`);
+    
+    for (const [id, clip] of Object.entries(updatedMapping.clips)) {
+      console.log(`  ${id}: ${clip.startTime} - ${clip.endTime} (${clip.trackFilename})`);
+    }
+  } catch (error) {
+    console.error(`\nError: ${error.message}`);
+    process.exit(1);
+  }
 }
 
 async function recordCommand(options) {
@@ -400,9 +639,6 @@ async function recordCommand(options) {
   const outputPath = path.resolve(options.output);
   const playerFilter = options.player || null;
   const idFilter = options.id || null;
-  const speedupMultiplier = options.speedup || null;
-  const showOverlay = options.overlay || false;
-  const slowmoFactor = options.slowmo || null;
 
   // Validate highlights.json exists
   if (!fs.existsSync(highlightsPath)) {
@@ -475,15 +711,6 @@ async function recordCommand(options) {
   if (idFilter) {
     console.log(`Filtering by ID: ${idFilter}`);
   }
-  if (speedupMultiplier) {
-    console.log(`Speed-up multiplier: ${speedupMultiplier}x for clutch gaps`);
-  }
-  if (showOverlay) {
-    console.log(`Overlay: Player name and highlight type (fade in/out)`);
-  }
-  if (slowmoFactor) {
-    console.log(`Slow motion: ${slowmoFactor}x on last kill (headshot/noscope)`);
-  }
 
   // Ensure output directory exists
   if (!fs.existsSync(outputPath)) {
@@ -491,7 +718,7 @@ async function recordCommand(options) {
   }
 
   try {
-    // Record all highlights
+    // Record all highlights (raw, no effects)
     const recordedClips = await recordAllHighlights({
       highlightsData,
       demosPath,
@@ -500,9 +727,6 @@ async function recordCommand(options) {
       outputPath,
       playerFilter,
       idFilter,
-      speedupMultiplier,
-      showOverlay,
-      slowmoFactor,
     });
 
     if (recordedClips.length === 0) {
@@ -513,10 +737,11 @@ async function recordCommand(options) {
     console.log('\n=========================');
     console.log('Recording Complete!');
     console.log('=========================');
-    console.log(`Recorded ${recordedClips.length} clips`);
+    console.log(`Recorded ${recordedClips.length} raw clips`);
     console.log(`Clips saved to: ${path.join(outputPath, 'clips')}`);
-    console.log(`\nTo merge clips into a single video, run:`);
-    console.log(`  node src/index.js merge --clips "${path.join(outputPath, 'clips')}"`);
+    console.log(`\nNext steps:`);
+    console.log(`  1. Post-process clips: node src/index.js postprocess --highlights "${highlightsPath}" --clips "${path.join(outputPath, 'clips')}" --speedup 4 --overlay --slowmo 0.5`);
+    console.log(`  2. Merge clips: node src/index.js merge --clips "${path.join(outputPath, 'clips')}"`);
 
     // Cleanup temp files
     cleanupTempFiles(outputPath);
@@ -525,6 +750,212 @@ async function recordCommand(options) {
     console.error(`\nError during recording: ${err.message}`);
     process.exit(1);
   }
+}
+
+/**
+ * Post-process command - apply effects to recorded clips
+ */
+async function postprocessCommand(options) {
+  const highlightsPath = path.resolve(options.highlights);
+  const clipsPath = path.resolve(options.clips);
+  const outputPath = options.output 
+    ? path.resolve(options.output) 
+    : path.join(path.dirname(clipsPath), 'clips_processed');
+  const speedupMultiplier = options.speedup || null;
+  const showOverlay = options.overlay || false;
+  const slowmoFactor = options.slowmo || null;
+  const forceReprocess = options.force || false;
+  const filterById = options.id || null;
+  
+  // Music options
+  const musicEnabled = options.music !== false;
+  const musicFolder = options.music ? path.resolve(options.music) : path.resolve(DEFAULT_CONFIG.music.folder);
+  const musicVolume = options.musicVolume !== undefined 
+    ? options.musicVolume / 100 
+    : DEFAULT_CONFIG.music.volume;
+
+  // Validate highlights.json exists
+  if (!fs.existsSync(highlightsPath)) {
+    console.error(`Error: Highlights file not found: ${highlightsPath}`);
+    process.exit(1);
+  }
+
+  // Validate clips folder exists
+  if (!fs.existsSync(clipsPath)) {
+    console.error(`Error: Clips folder not found: ${clipsPath}`);
+    process.exit(1);
+  }
+
+  // Create output folder if it doesn't exist
+  if (!fs.existsSync(outputPath)) {
+    fs.mkdirSync(outputPath, { recursive: true });
+  }
+
+  // Parse highlights.json
+  let highlightsData;
+  try {
+    const content = fs.readFileSync(highlightsPath, 'utf-8');
+    highlightsData = JSON.parse(content);
+  } catch (err) {
+    console.error(`Error: Failed to parse highlights.json: ${err.message}`);
+    process.exit(1);
+  }
+
+  // Load postprocess status (to skip already processed clips)
+  // Always load existing status - --force only affects whether we reprocess, not whether we keep history
+  const statusPath = path.join(outputPath, 'postprocess-status.json');
+  let processedStatus = {};
+  if (fs.existsSync(statusPath)) {
+    try {
+      processedStatus = JSON.parse(fs.readFileSync(statusPath, 'utf-8'));
+    } catch (e) {
+      processedStatus = {};
+    }
+  }
+
+  // Load music mapping if music is enabled
+  let musicMapping = null;
+  if (musicEnabled && fs.existsSync(musicFolder)) {
+    const musicMappingPath = path.join(path.dirname(highlightsPath), 'music-mapping.json');
+    
+    if (fs.existsSync(musicMappingPath)) {
+      musicMapping = loadMusicMapping(musicMappingPath);
+    }
+  }
+
+  // Find all .mp4 files in clips folder (sorted numerically by clip index)
+  const clipFiles = fs.readdirSync(clipsPath)
+    .filter(f => f.endsWith('.mp4'))
+    .sort((a, b) => {
+      const numA = parseInt(a.split('-')[0], 10) || 0;
+      const numB = parseInt(b.split('-')[0], 10) || 0;
+      return numA - numB;
+    });
+
+  if (clipFiles.length === 0) {
+    console.error('Error: No clip files found in folder');
+    process.exit(1);
+  }
+
+  // Build highlight ID to highlight mapping
+  const highlightMap = {};
+  for (const demo of highlightsData.demos) {
+    for (const highlight of demo.highlights) {
+      highlightMap[highlight.id] = {
+        ...highlight,
+        demoFile: demo.file,
+        tickRate: demo.tickRate,
+      };
+    }
+  }
+
+  console.log('CS:GO Highlights Post-Processor');
+  console.log('================================');
+  console.log(`Source clips: ${clipsPath}`);
+  console.log(`Output folder: ${outputPath}`);
+  console.log(`Total clips: ${clipFiles.length}`);
+  if (speedupMultiplier) console.log(`Speedup: ${speedupMultiplier}x`);
+  if (showOverlay) console.log(`Overlay: enabled`);
+  if (slowmoFactor) console.log(`Slowmo: ${slowmoFactor}x`);
+  if (musicMapping) console.log(`Music: enabled (${Object.keys(musicMapping.clips).length} clips mapped)`);
+  if (forceReprocess) console.log(`Force: re-processing all clips`);
+  if (filterById) console.log(`Filter: processing only ID ${filterById}`);
+
+  let processed = 0;
+  let skipped = 0;
+
+  for (const clipFile of clipFiles) {
+    // Extract highlight ID from filename (e.g., "1-de_dust2-abc123def456.mp4")
+    const match = clipFile.match(/-([a-f0-9]{12})\.mp4$/i);
+    if (!match) {
+      console.log(`  Skipping ${clipFile} (can't extract highlight ID)`);
+      skipped++;
+      continue;
+    }
+
+    const highlightId = match[1];
+    
+    // Filter by ID if specified
+    if (filterById && highlightId !== filterById) {
+      continue; // Skip silently - not the clip we're looking for
+    }
+    
+    const highlight = highlightMap[highlightId];
+
+    if (!highlight) {
+      console.log(`  Skipping ${clipFile} (highlight ID not found in highlights.json)`);
+      skipped++;
+      continue;
+    }
+
+    // Check if already processed (same settings)
+    const settingsHash = JSON.stringify({
+      speedup: speedupMultiplier,
+      overlay: showOverlay,
+      slowmo: slowmoFactor,
+      music: musicEnabled,
+    });
+
+    const outputClipPath = path.join(outputPath, clipFile);
+    
+    if (processedStatus[highlightId] === settingsHash && fs.existsSync(outputClipPath) && !forceReprocess) {
+      console.log(`  Skipping ${clipFile} (already processed)`);
+      skipped++;
+      continue;
+    }
+
+    const sourceClipPath = path.join(clipsPath, clipFile);
+    console.log(`\n  Processing ${clipFile}...`);
+
+    try {
+      // Copy source clip to output folder first (preserve original)
+      console.log(`    Copying to output folder...`);
+      fs.copyFileSync(sourceClipPath, outputClipPath);
+      
+      // Get music info for this highlight
+      const musicInfo = musicMapping && musicMapping.clips[highlightId]
+        ? musicMapping.clips[highlightId]
+        : null;
+
+      await postprocessClip({
+        clipPath: outputClipPath,  // Process the copy, not the original
+        highlight,
+        speedupMultiplier,
+        showOverlay,
+        slowmoFactor,
+        musicInfo,
+        musicVolume,
+        gameVolume: DEFAULT_CONFIG.music.gameVolume,
+        musicFadeDuration: DEFAULT_CONFIG.music.fadeDuration,
+      });
+
+      // Mark as processed and save status immediately (so interrupts don't lose progress)
+      processedStatus[highlightId] = settingsHash;
+      fs.writeFileSync(statusPath, JSON.stringify(processedStatus, null, 2));
+      processed++;
+      console.log(`    Done!`);
+    } catch (err) {
+      console.error(`    Error: ${err.message}`);
+      // Remove failed output file
+      try {
+        if (fs.existsSync(outputClipPath)) fs.unlinkSync(outputClipPath);
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  // Final status save (in case loop completed normally)
+  fs.writeFileSync(statusPath, JSON.stringify(processedStatus, null, 2));
+
+  console.log('\n================================');
+  console.log('Post-Processing Complete!');
+  console.log('================================');
+  console.log(`Processed: ${processed} clips`);
+  console.log(`Skipped: ${skipped} clips`);
+  console.log(`Output folder: ${outputPath}`);
+  console.log(`Status saved to: ${statusPath}`);
+  console.log(`\nOriginal clips preserved in: ${clipsPath}`);
+  console.log(`\nTo merge processed clips into a single video, run:`);
+  console.log(`  node src/index.js merge --clips "${outputPath}"`);
 }
 
 async function mergeCommand(options) {
@@ -539,10 +970,14 @@ async function mergeCommand(options) {
     process.exit(1);
   }
 
-  // Find all .mp4 files in the clips folder
+  // Find all .mp4 files in the clips folder (sorted numerically by clip index)
   const clipFiles = fs.readdirSync(clipsPath)
     .filter(file => file.endsWith('.mp4'))
-    .sort() // Sort alphabetically to maintain order (clip_0001, clip_0002, etc.)
+    .sort((a, b) => {
+      const numA = parseInt(a.split('-')[0], 10) || 0;
+      const numB = parseInt(b.split('-')[0], 10) || 0;
+      return numA - numB;
+    })
     .map(file => path.join(clipsPath, file));
 
   if (clipFiles.length === 0) {
@@ -709,3 +1144,115 @@ function runFfmpegCompress(inputPath, outputPath, crf) {
   });
 }
 
+/**
+ * Player kills command - show all kills by a player in a demo
+ */
+async function playerKillsCommand(options) {
+  const demoPath = path.resolve(options.demo);
+  const targetSteamId = options.steamid;
+  
+  // Validate demo file exists
+  if (!fs.existsSync(demoPath)) {
+    console.error(`Error: Demo file not found: ${demoPath}`);
+    process.exit(1);
+  }
+  
+  console.log('CS:GO Player Kills Analyzer');
+  console.log('===========================');
+  console.log(`Demo: ${path.basename(demoPath)}`);
+  console.log(`Steam ID: ${targetSteamId}`);
+  console.log('');
+  
+  try {
+    const { DemoFile } = require('demofile');
+    const buffer = fs.readFileSync(demoPath);
+    const demo = new DemoFile();
+    
+    const kills = [];
+    let tickRate = 128;
+    let playerName = null;
+    
+    demo.on('start', () => {
+      if (demo.header.playbackTime > 0) {
+        tickRate = Math.round(demo.header.playbackTicks / demo.header.playbackTime);
+      }
+    });
+    
+    demo.gameEvents.on('player_death', (e) => {
+      const attacker = demo.entities.getByUserId(e.attacker);
+      const victim = demo.entities.getByUserId(e.userid);
+      
+      if (attacker && attacker.steam64Id === targetSteamId) {
+        if (!playerName) playerName = attacker.name;
+        
+        kills.push({
+          tick: demo.currentTick,
+          victimName: victim ? victim.name : 'unknown',
+          weapon: e.weapon,
+          headshot: e.headshot,
+          noscope: e.noscope || false,
+        });
+      }
+    });
+    
+    await new Promise((resolve, reject) => {
+      demo.on('end', (e) => {
+        if (e.error) {
+          reject(new Error(`Demo parse error: ${e.error}`));
+        } else {
+          resolve();
+        }
+      });
+      demo.on('error', reject);
+      demo.parse(buffer);
+    });
+    
+    if (kills.length === 0) {
+      console.log(`No kills found for Steam ID ${targetSteamId}`);
+      console.log('Make sure you are using the 64-bit Steam ID format (e.g., 76561198105978409)');
+      return;
+    }
+    
+    console.log(`Player: ${playerName}`);
+    console.log(`Tick rate: ${tickRate}`);
+    console.log(`Total kills: ${kills.length}`);
+    console.log('');
+    console.log('# | Tick     | Time     | Gap      | Weapon      | Hit      | Victim');
+    console.log('--|----------|----------|----------|-------------|----------|--------');
+    
+    kills.forEach((k, i) => {
+      const timeSec = (k.tick / tickRate).toFixed(1);
+      const timeFormatted = formatTime(k.tick / tickRate);
+      const prev = i > 0 ? kills[i - 1] : null;
+      const gapSec = prev ? ((k.tick - prev.tick) / tickRate).toFixed(2) : '-';
+      const gapFormatted = prev ? `${gapSec}s` : '-';
+      const hit = k.headshot ? 'HEAD' : 'body';
+      const noscope = k.noscope ? ' (ns)' : '';
+      
+      console.log(
+        `${String(i + 1).padStart(2)} | ` +
+        `${String(k.tick).padStart(8)} | ` +
+        `${timeFormatted.padStart(8)} | ` +
+        `${gapFormatted.padStart(8)} | ` +
+        `${k.weapon.padEnd(11)} | ` +
+        `${(hit + noscope).padEnd(8)} | ` +
+        `${k.victimName}`
+      );
+    });
+    
+    console.log('');
+    
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Format seconds to MM:SS
+ */
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}

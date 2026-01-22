@@ -23,7 +23,7 @@ This will analyze all `.dem` files in the `./demos` folder and generate `highlig
 Analyzes CS:GO demo files and detects highlights such as kill series, knife kills, collaterals, and clutches.
 
 ```bash
-node src/index.js analyze --demos <path> [--output <path>]
+node src/index.js analyze --demos <path> [--output <path>] [--reset-music]
 ```
 
 #### Options
@@ -32,6 +32,9 @@ node src/index.js analyze --demos <path> [--output <path>]
 |--------|----------|---------|-------------|
 | `--demos <path>` | Yes | - | Path to folder containing `.dem` files |
 | `--output <path>` | No | `./output` | Output folder for `highlights.json` |
+| `--reset-music` | No | - | Reset music mapping (discard existing offsets) |
+
+By default, `analyze` preserves existing `offset` values in `music-mapping.json`. Use `--reset-music` to regenerate mapping from scratch.
 
 #### Example
 
@@ -41,7 +44,7 @@ node src/index.js analyze --demos ./my-demos --output ./results
 
 ### `record`
 
-Records all highlights using HLAE (Half-Life Advanced Effects). Produces individual video clips for each highlight.
+Records all highlights using HLAE (Half-Life Advanced Effects). Produces **raw video clips without effects**.
 
 ```bash
 node src/index.js record --highlights <path> --demos <path> --hlae <path> --csgo <path> [options]
@@ -78,9 +81,43 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 | `--output <path>` | No | `./output` | Output folder for clips |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
+
+### `postprocess`
+
+Applies effects to recorded clips (slowmo, speedup, music, overlay). Tracks processed clips in `postprocess-status.json` to avoid re-processing.
+
+```bash
+node src/index.js postprocess --highlights <path> [options]
+```
+
+**Example:**
+
+```bash
+node src/index.js postprocess --highlights ./output/highlights.json --clips ./output/clips --speedup 4 --overlay --slowmo 0.5
+```
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--highlights <path>` | Yes | - | Path to `highlights.json` file |
+| `--clips <path>` | No | `./output/clips` | Path to folder containing raw clips |
+| `--output <path>` | No | `./output/clips_processed` | Output folder for processed clips (originals preserved) |
 | `--speedup <multiplier>` | No | - | Speed up gaps between kills (e.g., `4` for 4x speed) |
 | `--overlay` | No | - | Show player name and highlight type overlay (fade in/out) |
-| `--slowmo <factor>` | No | - | Slow motion on last kill if headshot/noscope (e.g., `0.5` for half speed) |
+| `--slowmo <factor>` | No | - | Slow motion on last headshot/noscope kill (e.g., `0.5` for half speed) |
+| `--music <folder>` | No | `./music` | Path to folder with music files |
+| `--music-volume <percent>` | No | `70` | Music volume 0-100% |
+| `--no-music` | No | - | Disable music overlay |
+| `--force` | No | - | Re-process all clips even if already processed |
+| `--id <highlightId>` | No | - | Process only a specific highlight by ID |
+
+#### Tracking & Output
+
+- **Original clips are never modified** — they remain in the source folder
+- Processed clips are saved to `--output` folder (default: `./output/clips_processed`)
+- Post-processing status is saved in `postprocess-status.json` in the output folder
+- Clips are only re-processed if settings change or `--force` is used
 
 #### Recording Settings
 
@@ -143,15 +180,20 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 
 #### Speedup (Clutches & Kill Series)
 
-When using `--speedup`, long gaps between kills are sped up using FFmpeg post-processing:
+When using `--speedup`, long gaps between action are sped up using FFmpeg post-processing:
 
 - Works for both **clutches** and **kill series** (multi kills)
-- Keeps 2 seconds of normal speed before/after each kill
+- Keeps 2 seconds of normal speed before/after each action
 - Only speeds up gaps longer than 4 seconds
 - Applies to both video and audio (audio uses atempo filter)
 - Works with any speed multiplier (e.g., `--speedup 2`, `--speedup 4`, `--speedup 8`)
 
-This makes long highlights more watchable while preserving the action moments at normal speed.
+**Smart action detection:**
+- Detects **all player shots** (not just kills) — speedup won't activate while shooting
+- Includes **knife kills** as action points (melee attacks don't have weapon_fire events)
+- Groups consecutive shots into "action periods" for smooth transitions
+
+This makes long highlights more watchable while preserving all action moments at normal speed.
 
 #### Player Overlay
 
@@ -176,8 +218,16 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 
 #### Slow Motion
 
-When using `--slowmo`, an "impact" slow motion effect is applied to the last kill in kill-series highlights if the kill is:
+When using `--slowmo` with `postprocess`, an "impact" slow motion effect is applied:
 
+**For kill-series and clutches:**
+- Finds the **last headshot or noscope kill** in the series (not necessarily the final kill)
+- Example: `[body, headshot, body]` → slowmo on the headshot (middle kill)
+
+**For collaterals:**
+- **Always** applies slowmo (collaterals are always impressive)
+
+**Qualifying kills:**
 - A **headshot**, OR
 - A **noscope** sniper shot
 
@@ -193,14 +243,98 @@ When using `--slowmo`, an "impact" slow motion effect is applied to the last kil
 Example with slow motion:
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --slowmo 0.5
+node src/index.js postprocess --highlights ./output/highlights.json --slowmo 0.5
 ```
 
 Combine all effects:
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4 --overlay --slowmo 0.5
+node src/index.js postprocess --highlights ./output/highlights.json --speedup 4 --overlay --slowmo 0.5
 ```
+
+#### Music Overlay
+
+Add background music to your clips during post-processing.
+
+**Setup:**
+1. Create a `music/` folder in your project directory
+2. Add audio files (MP3, WAV, FLAC, OGG, M4A, AAC)
+
+**How it works:**
+- `analyze` command generates `music-mapping.json` alongside `highlights.json`
+- Each clip is assigned a unique segment of music (no reuse between clips)
+- Music plays sequentially through all clips
+- When a track ends, the next track in the folder is used
+- Music fades in/out at clip boundaries (50% → 100% → 50%)
+
+**Example:**
+
+```bash
+node src/index.js postprocess --highlights ./output/highlights.json --music ./music --music-volume 70
+```
+
+Post-process without music:
+
+```bash
+node src/index.js postprocess --highlights ./output/highlights.json --no-music
+```
+
+**Music behavior with effects:**
+- **Speedup**: Music plays at normal speed (not sped up)
+- **Slowmo**: Music plays at normal speed
+
+**music-mapping.json** structure:
+
+```json
+{
+  "tracks": [
+    { "path": "music/track.mp3", "duration": 300.5 }
+  ],
+  "clips": {
+    "ced8b2df3663": {
+      "track": "music/track.mp3",
+      "startTime": "0:00",
+      "endTime": "0:45",
+      "duration": "0:45",
+      "offset": "0:00"
+    }
+  }
+}
+```
+
+**Manual Music Offset:**
+
+You can manually adjust music timing for individual clips by editing the `offset` field in `music-mapping.json`:
+
+- `"offset": "1:30"` — shift music 1 minute 30 seconds forward (skip intro)
+- `"offset": "-0:30"` — shift music 30 seconds backward (NOT RECOMMENDED, use positive offsets)
+
+After editing offsets, run `resync-music` to recalculate times:
+
+```bash
+node src/index.js resync-music
+```
+
+### `resync-music`
+
+Recalculates music `startTime` and `endTime` based on manual `offset` values in `music-mapping.json`.
+
+```bash
+node src/index.js resync-music [--mapping <path>]
+```
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--mapping <path>` | No | `./output/music-mapping.json` | Path to music-mapping.json file |
+
+#### Workflow
+
+1. Run `analyze` — generates `music-mapping.json` with `offset: 0` for all clips
+2. Edit `offset` values manually in `music-mapping.json`
+3. Run `resync-music` — recalculates `startTime` and `endTime`
+4. Run `record` — clips use updated music timings
 
 #### Output
 
@@ -244,25 +378,25 @@ node src/index.js merge --clips <path> [--output <path>] [--cleanup]
 Merge clips into a single video:
 
 ```bash
-node src/index.js merge --clips ./output/clips
+node src/index.js merge --clips ./output/clips_processed
 ```
 
 Merge with custom output path:
 
 ```bash
-node src/index.js merge --clips ./output/clips --output ./my_highlights.mp4
+node src/index.js merge --clips ./output/clips_processed --output ./my_highlights.mp4
 ```
 
 Merge and delete individual clips after:
 
 ```bash
-node src/index.js merge --clips ./output/clips --cleanup
+node src/index.js merge --clips ./output/clips_processed --cleanup
 ```
 
 Merge with 1-second fade transitions between clips:
 
 ```bash
-node src/index.js merge --clips ./output/clips --transition 1
+node src/index.js merge --clips ./output/clips_processed --transition 1
 ```
 
 #### Transitions
@@ -331,6 +465,52 @@ node src/index.js compress --input ./output/highlights_final.mp4 --power 7 --out
 #### Output
 
 The command produces a compressed video file and displays the size reduction percentage.
+
+### `player-kills`
+
+Shows all kills by a specific player in a demo file. Useful for debugging and understanding highlight detection.
+
+```bash
+node src/index.js player-kills --demo <path> --steamid <id>
+```
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--demo <path>` | Yes | - | Path to demo file (`.dem`) |
+| `--steamid <id>` | Yes | - | Player Steam ID (64-bit format, e.g., `76561198105978409`) |
+
+#### Example
+
+```bash
+node src/index.js player-kills --demo ./demos/match.dem --steamid 76561198105978409
+```
+
+#### Output
+
+```
+CS:GO Player Kills Analyzer
+===========================
+Demo: match.dem
+Steam ID: 76561198105978409
+
+Player: PlayerName
+Tick rate: 128
+Total kills: 15
+
+ # | Tick     | Time     | Gap      | Weapon      | Hit      | Victim
+---|----------|----------|----------|-------------|----------|--------
+ 1 |    68903 |     8:58 |        - | awp         | body     | Enemy1
+ 2 |   105596 |    13:45 |   286.66s | awp         | body     | Enemy2
+ 3 |   107616 |    14:01 |    15.78s | awp         | HEAD     | Enemy3
+...
+```
+
+This helps identify:
+- Which kills were detected and their timings
+- Gap between kills (for understanding kill-series detection)
+- Whether kills were headshots or body shots
 
 ## Typical Workflow
 
@@ -530,8 +710,16 @@ Default configuration (hardcoded in `src/index.js`):
     after: 3             // Seconds after highlight ends
   },
   speedup: {
+    startDelay: 2,         // Seconds after highlight start before speedup can begin
     bufferAroundKills: 2,  // Seconds at normal speed before/after each kill
     minGapDuration: 4      // Minimum gap duration to trigger speedup
+  },
+  music: {
+    folder: './music',     // Path to folder with music tracks
+    volume: 0.7,           // Music volume (0-1)
+    gameVolume: 1.0,       // Game audio volume (0-1)
+    fadeDuration: 2,       // Fade in/out duration in seconds (50% → 100% → 50%)
+    enabled: true          // Enable music overlay by default
   },
   detection: {
     maxDelay: 15,        // Max seconds between kills for a series

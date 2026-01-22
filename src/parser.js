@@ -121,6 +121,10 @@ function parseDemo(filePath) {
     // Track recent shots by player (steamId -> array of shot ticks)
     // Used to find when player started shooting before a kill
     const recentShotsByPlayer = new Map();
+    
+    // Track ALL shots by player for speedup calculation
+    // (steamId -> array of {tick, weapon})
+    const allShotsByPlayer = new Map();
 
     demoFile.on('start', () => {
       // Calculate tick rate from header
@@ -194,19 +198,27 @@ function parseDemo(filePath) {
       const steamId = shooter.steam64Id?.toString();
       if (!steamId) return;
       
-      // Store shot tick
+      const currentTick = demoFile.currentTick;
+      
+      // Store shot tick for recent lookback (used for firstShotTick)
       if (!recentShotsByPlayer.has(steamId)) {
         recentShotsByPlayer.set(steamId, []);
       }
       
       const shots = recentShotsByPlayer.get(steamId);
-      shots.push(demoFile.currentTick);
+      shots.push(currentTick);
       
       // Keep only shots from last ~15 seconds (to avoid memory issues)
       const maxAge = tickRate * 15;
-      while (shots.length > 0 && shots[0] < demoFile.currentTick - maxAge) {
+      while (shots.length > 0 && shots[0] < currentTick - maxAge) {
         shots.shift();
       }
+      
+      // Store ALL shots for speedup calculation
+      if (!allShotsByPlayer.has(steamId)) {
+        allShotsByPlayer.set(steamId, []);
+      }
+      allShotsByPlayer.get(steamId).push(currentTick);
     });
 
     // Player death
@@ -327,10 +339,17 @@ function parseDemo(filePath) {
         return;
       }
 
+      // Convert allShotsByPlayer Map to plain object for JSON serialization
+      const shotsByPlayer = {};
+      for (const [steamId, shots] of allShotsByPlayer) {
+        shotsByPlayer[steamId] = shots;
+      }
+      
       resolve({
         tickRate,
         kills,
         rounds,
+        shotsByPlayer, // All weapon_fire events by player steamId
         header: {
           mapName: demoFile.header.mapName,
           playbackTicks: demoFile.header.playbackTicks,

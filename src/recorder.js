@@ -1,6 +1,7 @@
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { parseTime } = require('./music');
 
 // Track active processes for cleanup on SIGINT/SIGTERM
 let activeHlaeProcess = null;
@@ -91,12 +92,10 @@ const DEFAULT_SETTINGS = {
  * @param {Object} options.highlight Highlight object from highlights.json
  * @param {string} options.outputPath Output folder for clips
  * @param {number} options.clipIndex Index of this clip (for naming)
- * @param {number} [options.speedupMultiplier] Optional speed multiplier for clutch gaps
- * @param {boolean} [options.showOverlay] Whether to show player name and highlight type overlay
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, speedupMultiplier, showOverlay, slowmoFactor } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -144,7 +143,6 @@ async function recordHighlight(options) {
     highlight,
     clipFolder,
     cfgFileName,
-    speedupMultiplier,
   });
   
   // VDM path: same as demo but with .vdm extension
@@ -158,18 +156,7 @@ async function recordHighlight(options) {
   
   // Write VDM file
   fs.writeFileSync(vdmPath, vdmContent);
-  const speedupInfo = speedupMultiplier && highlight.playback.speedupSegments 
-    ? `, ${highlight.playback.speedupSegments.length} speedup segment(s) at ${speedupMultiplier}x`
-    : '';
-  console.log(`    [2/4] VDM file created (skip to tick ${highlight.playback.startTick - 128}, record ${highlight.playback.startTick}-${highlight.playback.endTick}${speedupInfo})`);
-  
-  // Debug: Print speedup segment details
-  if (speedupMultiplier && highlight.playback.speedupSegments) {
-    console.log(`    Speedup segments:`);
-    highlight.playback.speedupSegments.forEach((seg, i) => {
-      console.log(`      ${i + 1}. Ticks ${seg.startTick}-${seg.endTick} (${seg.durationSeconds}s at ${speedupMultiplier}x)`);
-    });
-  }
+  console.log(`    [2/4] VDM file created (skip to tick ${highlight.playback.startTick - 128}, record ${highlight.playback.startTick}-${highlight.playback.endTick})`);
   console.log(`    [3/4] Launching HLAE + CS:GO... (estimated clip: ${highlight.playback.durationSeconds}s)`);
   console.log(`    Demo path: ${demoPath}`);
   console.log(`    VDM path: ${vdmPath}`);
@@ -225,19 +212,48 @@ async function recordHighlight(options) {
   // Clean up TGA/WAV files
   cleanupTgaFiles(clipFolder);
   
-  // Track current step for progress display
-  let currentStep = 5;
-  const speedupSegments = highlight.playback.speedupSegments;
-  const slowmotion = highlight.playback.slowmotion;
+  // Recording complete - post-processing is now a separate step
+  return clipOutputPath;
+}
+
+/**
+ * Post-process a single clip (apply slowmo, speedup, music, overlay)
+ * @param {Object} options - Post-processing options
+ * @returns {Promise<string>} Path to processed clip
+ */
+async function postprocessClip(options) {
+  const {
+    clipPath,
+    highlight,
+    speedupMultiplier,
+    showOverlay,
+    slowmoFactor,
+    musicInfo,
+    musicVolume,
+    gameVolume,
+    musicFadeDuration,
+  } = options;
+
+  const speedupSegments = highlight.playback?.speedupSegments;
+  const slowmotion = highlight.playback?.slowmotion;
   const hasSpeedup = speedupMultiplier && speedupSegments && speedupSegments.length > 0;
   const hasSlowmo = slowmoFactor && slowmotion;
-  
+  const hasMusic = musicInfo && musicInfo.track;
+
   // Calculate total steps
-  let totalSteps = 4; // Base steps (1-4 for recording/encoding)
+  let totalSteps = 0;
   if (hasSlowmo) totalSteps++;
   if (hasSpeedup) totalSteps++;
+  if (hasMusic) totalSteps++;
   if (showOverlay) totalSteps++;
-  
+
+  if (totalSteps === 0) {
+    console.log('    No post-processing needed');
+    return clipPath;
+  }
+
+  let currentStep = 1;
+
   // IMPORTANT: Apply slowmo FIRST (before speedup changes timings)
   if (hasSlowmo) {
     console.log(`    [${currentStep}/${totalSteps}] Applying slow motion (${slowmoFactor}x at ${slowmotion.reason})...`);
@@ -249,7 +265,7 @@ async function recordHighlight(options) {
     const slowmoEndTime = (slowmotion.endTick - playbackStartTick) / tickRate;
     
     await applySlowMotionToVideo({
-      inputPath: clipOutputPath,
+      inputPath: clipPath,
       startTime: slowmoStartTime,
       endTime: slowmoEndTime,
       factor: slowmoFactor,
@@ -300,7 +316,7 @@ async function recordHighlight(options) {
     });
     
     await applySpeedupToVideo({
-      inputPath: clipOutputPath,
+      inputPath: clipPath,
       segments: timeSegments,
       speedMultiplier: speedupMultiplier,
       crf: DEFAULT_SETTINGS.crf,
@@ -310,12 +326,51 @@ async function recordHighlight(options) {
     currentStep++;
   }
   
+  // Apply music after speedup (music has special handling for slowmo/speedup)
+  if (hasMusic) {
+    console.log(`    [${currentStep}/${totalSteps}] Adding music overlay (${musicInfo.trackFilename})...`);
+    
+    // Build slowmo/speedup segment info for music processing
+    const tickRate = highlight.tickRate || 128;
+    const playbackStartTick = highlight.playback.startTick;
+    
+    // Slowmo segments (music should slow down here)
+    const slowmoSegments = hasSlowmo ? [{
+      startTime: (slowmotion.startTick - playbackStartTick) / tickRate,
+      endTime: (slowmotion.endTick - playbackStartTick) / tickRate,
+      factor: slowmoFactor,
+    }] : [];
+    
+    // Speedup segments (music should NOT speed up, just trim to match duration)
+    const speedupSegs = hasSpeedup ? speedupSegments.map(seg => ({
+      startTime: (seg.startTick - playbackStartTick) / tickRate,
+      endTime: (seg.endTick - playbackStartTick) / tickRate,
+      factor: speedupMultiplier,
+    })) : [];
+    
+    await applyMusicToVideo({
+      inputPath: clipPath,
+      musicPath: musicInfo.track,
+      musicStartTime: musicInfo.startTime,
+      musicEndTime: musicInfo.endTime,
+      musicVolume: musicVolume || 0.7,
+      gameVolume: gameVolume || 1.0,
+      fadeDuration: musicFadeDuration || 3,
+      slowmoSegments,
+      speedupSegments: speedupSegs,
+      crf: DEFAULT_SETTINGS.crf,
+    });
+    
+    console.log(`    [${currentStep}/${totalSteps}] Music overlay applied successfully`);
+    currentStep++;
+  }
+  
   // Apply overlay LAST (after all timing changes)
   if (showOverlay) {
     console.log(`    [${currentStep}/${totalSteps}] Adding player overlay...`);
     
     await applyOverlayToVideo({
-      inputPath: clipOutputPath,
+      inputPath: clipPath,
       playerName: highlight.player.name,
       highlightType: formatHighlightType(highlight),
       crf: DEFAULT_SETTINGS.crf,
@@ -324,7 +379,7 @@ async function recordHighlight(options) {
     console.log(`    [${currentStep}/${totalSteps}] Overlay applied successfully`);
   }
   
-  return clipOutputPath;
+  return clipPath;
 }
 
 /**
@@ -476,6 +531,114 @@ async function applyOverlayToVideo(options) {
     ffmpeg.on('error', (err) => {
       activeFfmpegProcess = null;
       reject(new Error(`Failed to run FFmpeg for overlay: ${err.message}`));
+    });
+  });
+}
+
+/**
+ * Applies music overlay to video
+ * Music is mixed with game audio at specified volumes
+ * For slowmo segments: music is slowed down
+ * For speedup segments: music stays at normal speed (not sped up)
+ * @param {Object} options - Options for music overlay
+ * @param {string} options.inputPath - Path to input video
+ * @param {string} options.musicPath - Path to music file
+ * @param {number} options.musicStartTime - Start time in music file
+ * @param {number} options.musicEndTime - End time in music file
+ * @param {number} options.musicVolume - Music volume (0-1)
+ * @param {number} options.gameVolume - Game audio volume (0-1)
+ * @param {Array} options.slowmoSegments - Segments where music should slow down
+ * @param {Array} options.speedupSegments - Segments where video was sped up (music stays normal)
+ * @param {number} options.crf - Video quality (CRF value)
+ */
+async function applyMusicToVideo(options) {
+  const { 
+    inputPath, musicPath, musicStartTime: musicStartTimeRaw, musicEndTime: musicEndTimeRaw,
+    musicVolume = 0.7, gameVolume = 1.0,
+    fadeDuration = 3, // Fade in/out duration in seconds
+    slowmoSegments = [], speedupSegments = [],
+    crf = 18
+  } = options;
+  
+  // Parse time strings (e.g., "1:30" -> 90 seconds)
+  const musicStartTime = parseTime(musicStartTimeRaw);
+  const musicEndTime = parseTime(musicEndTimeRaw);
+  
+  // Create temp output path
+  const tempOutput = inputPath.replace('.mp4', '_music_temp.mp4');
+  
+  // Get video duration
+  const videoDuration = await getVideoDuration(inputPath);
+  
+  // Check if input video has audio
+  const hasAudio = await checkVideoHasAudio(inputPath);
+  
+  // Calculate fade out start time
+  const fadeOutStart = Math.max(0, videoDuration - fadeDuration);
+  
+  return new Promise((resolve, reject) => {
+    // FFmpeg command to mix music with game audio (or just add music if no game audio)
+    // Using simple afade filter (0%->100%->0% fade)
+    
+    let filterComplex;
+    if (hasAudio) {
+      // Mix game audio with music (with fade in/out on music)
+      filterComplex = 
+        `[0:a]volume=${gameVolume}[game];` +
+        `[1:a]volume=${musicVolume},afade=t=in:st=0:d=${fadeDuration},afade=t=out:st=${fadeOutStart}:d=${fadeDuration}[music];` +
+        `[game][music]amix=inputs=2:duration=first:dropout_transition=2[aout]`;
+    } else {
+      // No game audio - just use music with fade
+      filterComplex = `[1:a]volume=${musicVolume},afade=t=in:st=0:d=${fadeDuration},afade=t=out:st=${fadeOutStart}:d=${fadeDuration}[aout]`;
+    }
+    
+    const args = [
+      '-i', inputPath,
+      '-ss', String(musicStartTime),
+      '-t', String(videoDuration),
+      '-i', musicPath,
+      '-filter_complex', filterComplex,
+      '-map', '0:v',
+      '-map', '[aout]',
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-y',
+      tempOutput,
+    ];
+    
+    const ffmpeg = spawn('ffmpeg', args);
+    
+    activeFfmpegProcess = ffmpeg;
+    
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      activeFfmpegProcess = null;
+      if (code === 0) {
+        // Replace original with music version
+        try {
+          fs.unlinkSync(inputPath);
+          fs.renameSync(tempOutput, inputPath);
+          resolve(inputPath);
+        } catch (err) {
+          reject(new Error(`Failed to replace video: ${err.message}`));
+        }
+      } else {
+        // Clean up temp file on error
+        try {
+          if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+        } catch (e) { /* ignore */ }
+        reject(new Error(`FFmpeg music mixing failed: ${errorOutput.slice(-500)}`));
+      }
+    });
+    
+    ffmpeg.on('error', (err) => {
+      activeFfmpegProcess = null;
+      reject(new Error(`Failed to run FFmpeg for music: ${err.message}`));
     });
   });
 }
@@ -662,8 +825,8 @@ function buildAtempoChain(factor) {
  * VDM files are the Source engine's native way to control demo playback
  */
 function generateVdmFile(options) {
-  const { highlight, clipFolder, cfgFileName, speedupMultiplier } = options;
-  const { startTick, endTick, speedupSegments } = highlight.playback;
+  const { highlight, clipFolder, cfgFileName } = options;
+  const { startTick, endTick } = highlight.playback;
   
   // Normalize path for CS:GO console (use forward slashes)
   const normalizedClipFolder = clipFolder.replace(/\\/g, '/');
@@ -1173,6 +1336,43 @@ function getVideoDuration(videoPath) {
 }
 
 /**
+ * Check if video file has an audio stream
+ * @param {string} videoPath - Path to video file
+ * @returns {Promise<boolean>} True if video has audio
+ */
+function checkVideoHasAudio(videoPath) {
+  return new Promise((resolve) => {
+    const args = [
+      '-v', 'error',
+      '-select_streams', 'a',
+      '-show_entries', 'stream=codec_type',
+      '-of', 'csv=p=0',
+      videoPath,
+    ];
+    
+    const ffprobe = spawn('ffprobe', args, {
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    
+    let output = '';
+    ffprobe.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    ffprobe.on('close', () => {
+      // If output contains 'audio', there's an audio stream
+      resolve(output.trim().length > 0);
+    });
+    
+    ffprobe.on('error', () => {
+      // If ffprobe fails, assume no audio
+      resolve(false);
+    });
+  });
+}
+
+/**
  * Builds timeline of segments with their speed settings
  */
 function buildSpeedupTimeline(speedupSegments, totalDuration) {
@@ -1290,7 +1490,7 @@ function cleanupTgaFiles(folder) {
 }
 
 /**
- * Records all highlights from a highlights.json file
+ * Records all highlights from a highlights.json file (raw clips without effects)
  * @param {Object} options Recording options
  * @param {Object} options.highlightsData Parsed highlights.json data
  * @param {string} options.demosPath Path to demos folder
@@ -1299,12 +1499,10 @@ function cleanupTgaFiles(folder) {
  * @param {string} options.outputPath Output folder
  * @param {string} [options.playerFilter] Optional Steam ID to filter by player
  * @param {string} [options.idFilter] Optional highlight ID to record only one clip
- * @param {number} [options.speedupMultiplier] Optional speed multiplier for clutch gaps
- * @param {boolean} [options.showOverlay] Whether to show player name and highlight type overlay
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, speedupMultiplier, showOverlay, slowmoFactor } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter } = options;
   
   const recordedClips = [];
   const clipsFolder = path.join(outputPath, 'clips');
@@ -1390,9 +1588,6 @@ async function recordAllHighlights(options) {
         highlight,
         outputPath,
         clipIndex,
-        speedupMultiplier,
-        showOverlay,
-        slowmoFactor,
       });
       
       recordedClips.push(clipPath);
@@ -1408,5 +1603,7 @@ async function recordAllHighlights(options) {
 module.exports = {
   recordHighlight,
   recordAllHighlights,
+  postprocessClip,
+  formatHighlightType,
   DEFAULT_SETTINGS,
 };
