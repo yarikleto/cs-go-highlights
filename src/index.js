@@ -1171,6 +1171,9 @@ async function playerKillsCommand(options) {
     const kills = [];
     let tickRate = 128;
     let playerName = null;
+    let matchStarted = false;
+    let isWarmup = true;
+    let roundCount = 0;
     
     demo.on('start', () => {
       if (demo.header.playbackTime > 0) {
@@ -1178,16 +1181,50 @@ async function playerKillsCommand(options) {
       }
     });
     
+    // Detect match start (end of warmup)
+    demo.gameEvents.on('round_announce_match_start', () => {
+      matchStarted = true;
+      isWarmup = false;
+      roundCount = 1; // First round starts with match
+    });
+    
+    demo.gameEvents.on('begin_new_match', () => {
+      matchStarted = true;
+      isWarmup = false;
+      roundCount = 1; // First round starts with match
+    });
+    
+    demo.gameEvents.on('round_start', () => {
+      // Only count rounds after match has started
+      if (matchStarted) {
+        roundCount++;
+      }
+    });
+    
     demo.gameEvents.on('player_death', (e) => {
       const attacker = demo.entities.getByUserId(e.attacker);
       const victim = demo.entities.getByUserId(e.userid);
       
-      if (attacker && attacker.steam64Id === targetSteamId) {
+      // Skip if no attacker or victim
+      if (!attacker || !victim) return;
+      
+      // Skip team kills
+      if (attacker.teamNumber === victim.teamNumber) return;
+      
+      // Skip warmup kills (before match officially starts)
+      if (!matchStarted) return;
+      
+      if (attacker.steam64Id === targetSteamId) {
         if (!playerName) playerName = attacker.name;
+        
+        // Get side: teamNumber 2 = T, 3 = CT
+        const side = attacker.teamNumber === 3 ? 'CT' : 'T';
         
         kills.push({
           tick: demo.currentTick,
-          victimName: victim ? victim.name : 'unknown',
+          round: roundCount,
+          side: side,
+          victimName: victim.name,
           weapon: e.weapon,
           headshot: e.headshot,
           noscope: e.noscope || false,
@@ -1217,11 +1254,10 @@ async function playerKillsCommand(options) {
     console.log(`Tick rate: ${tickRate}`);
     console.log(`Total kills: ${kills.length}`);
     console.log('');
-    console.log('# | Tick     | Time     | Gap      | Weapon      | Hit      | Victim');
-    console.log('--|----------|----------|----------|-------------|----------|--------');
+    console.log(' # | Rnd | Side | Tick     | Time     | Gap      | Weapon      | Hit      | Victim');
+    console.log('----|-----|------|----------|----------|----------|-------------|----------|--------');
     
     kills.forEach((k, i) => {
-      const timeSec = (k.tick / tickRate).toFixed(1);
       const timeFormatted = formatTime(k.tick / tickRate);
       const prev = i > 0 ? kills[i - 1] : null;
       const gapSec = prev ? ((k.tick - prev.tick) / tickRate).toFixed(2) : '-';
@@ -1231,6 +1267,8 @@ async function playerKillsCommand(options) {
       
       console.log(
         `${String(i + 1).padStart(2)} | ` +
+        `${String(k.round).padStart(3)} | ` +
+        `${k.side.padStart(4)} | ` +
         `${String(k.tick).padStart(8)} | ` +
         `${timeFormatted.padStart(8)} | ` +
         `${gapFormatted.padStart(8)} | ` +

@@ -484,7 +484,7 @@ node src/index.js player-kills --demo <path> --steamid <id>
 #### Example
 
 ```bash
-node src/index.js player-kills --demo ./demos/match.dem --steamid 76561198105978409
+node src/index.js player-kills --demo ./demos/auto0-20260116-172808-1914328147-de_dust2-WIX_CSGO_CLUB_1.dem --steamid 76561198105978409
 ```
 
 #### Output
