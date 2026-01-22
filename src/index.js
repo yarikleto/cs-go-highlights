@@ -68,6 +68,7 @@ const DEFAULT_CONFIG = {
   // Used for collision resolution between same player's highlights
   // Higher priority wins when highlights overlap
   priorities: {
+    'solo': 1,      // Lowest priority - single kills added manually
     'clutch': 2,
     'knife': 3,
     'collateral': 4,
@@ -87,6 +88,8 @@ program
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
   .option('--output <path>', 'Output folder for highlights.json', './output')
   .option('--reset-music', 'Reset music mapping (discard existing offsets)')
+  .option('--solo-kills <json>', 'JSON object mapping demo filenames to tick arrays')
+  .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
   .action(analyzeCommand);
 
 // Resync music command - recalculate music times based on manual offsets
@@ -160,6 +163,37 @@ async function analyzeCommand(options) {
   const outputPath = path.resolve(options.output);
   const resetMusic = options.resetMusic || false;
   
+  // Parse solo kills - JSON object: {"demo.dem": [tick1, tick2], ...}
+  let soloKillsByDemo = {};
+  if (options.soloKillsFile) {
+    // Load from file
+    const soloKillsPath = path.resolve(options.soloKillsFile);
+    if (!fs.existsSync(soloKillsPath)) {
+      console.error(`Error: Solo kills file not found: ${soloKillsPath}`);
+      process.exit(1);
+    }
+    try {
+      const fileContent = fs.readFileSync(soloKillsPath, 'utf8');
+      soloKillsByDemo = JSON.parse(fileContent);
+      const totalTicks = Object.values(soloKillsByDemo).flat().length;
+      console.log(`Solo kills loaded from file: ${totalTicks} tick(s) across ${Object.keys(soloKillsByDemo).length} demo(s)`);
+    } catch (e) {
+      console.error(`Error parsing solo kills file: ${e.message}`);
+      process.exit(1);
+    }
+  } else if (options.soloKills) {
+    try {
+      soloKillsByDemo = JSON.parse(options.soloKills);
+      const totalTicks = Object.values(soloKillsByDemo).flat().length;
+      console.log(`Solo kills: ${totalTicks} tick(s) across ${Object.keys(soloKillsByDemo).length} demo(s)`);
+    } catch (e) {
+      console.error(`Error parsing --solo-kills JSON: ${e.message}`);
+      console.log('Expected format: \'{"demo.dem": [tick1, tick2], ...}\'');
+      console.log('Tip: Use --solo-kills-file to load from a JSON file instead');
+      process.exit(1);
+    }
+  }
+  
   // Validate demos folder exists
   if (!fs.existsSync(demosPath)) {
     console.error(`Error: Demos folder not found: ${demosPath}`);
@@ -187,6 +221,7 @@ async function analyzeCommand(options) {
       totalHighlights: 0,
       totalDurationSeconds: 0,
       byType: {
+        'solo': 0,
         'kill-series': 0,
         'collateral': 0,
         'knife': 0,
@@ -210,6 +245,42 @@ async function analyzeCommand(options) {
       // Detect highlights
       let highlights = detectHighlights(demoData, DEFAULT_CONFIG);
       console.log(`  Raw highlights found: ${highlights.length}`);
+
+      // Add solo kill highlights for specified ticks (for this demo)
+      const demoSoloTicks = soloKillsByDemo[fileName] || [];
+      if (demoSoloTicks.length > 0) {
+        const soloPriority = DEFAULT_CONFIG.priorities['solo'] || 1;
+        let soloAdded = 0;
+        
+        for (const tick of demoSoloTicks) {
+          // Find the kill at this tick
+          const kill = demoData.kills.find(k => k.tick === tick);
+          if (kill) {
+            // Calculate points for this kill
+            const points = (kill.headshot ? (DEFAULT_CONFIG.killPoints?.headshot || 2) : (DEFAULT_CONFIG.killPoints?.normal || 1)) +
+                          (kill.noscope ? (DEFAULT_CONFIG.killPoints?.noscope || 3) : 0);
+            
+            highlights.push({
+              type: 'solo',
+              priority: soloPriority,
+              player: {
+                name: kill.attacker.name,
+                steamId: kill.attacker.steamId,
+              },
+              tick: kill.tick,
+              kills: [kill],
+              points: points,
+            });
+            soloAdded++;
+          } else {
+            console.log(`  Warning: No kill found at tick ${tick}`);
+          }
+        }
+        
+        if (soloAdded > 0) {
+          console.log(`  Added ${soloAdded} solo kill highlight(s)`);
+        }
+      }
 
       // Resolve collisions
       highlights = resolveCollisions(highlights);
@@ -394,14 +465,20 @@ async function analyzeCommand(options) {
         // Impact style: instant slowdown at kill, then gradual ramp back to normal
         // Works for kill-series, clutches, and collaterals
         let slowmotion = null;
-        if ((h.type === 'kill-series' || h.type === 'clutch' || h.type === 'collateral') && h.kills && h.kills.length > 0) {
+        if ((h.type === 'kill-series' || h.type === 'clutch' || h.type === 'collateral' || h.type === 'solo') && h.kills && h.kills.length > 0) {
           // For collaterals, ALWAYS apply slowmo (collaterals are always impressive)
-          // For series/clutch, check if last kill is headshot or noscope
+          // For series/clutch/solo, check if kill is headshot or noscope
           let qualifyingKill = null;
           
           if (h.type === 'collateral') {
             // Collaterals always get slowmo - use first kill (all same tick anyway)
             qualifyingKill = h.kills[0];
+          } else if (h.type === 'solo') {
+            // Solo kills: apply slowmo if headshot or noscope
+            const kill = h.kills[0];
+            if (kill.headshot === true || kill.noscope === true) {
+              qualifyingKill = kill;
+            }
           } else {
             // For series/clutch, find the LAST headshot/noscope kill (iterate from end)
             // Example: [body, headshot, body] -> slowmo on the headshot (index 1)

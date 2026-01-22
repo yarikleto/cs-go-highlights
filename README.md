@@ -33,8 +33,22 @@ node src/index.js analyze --demos <path> [--output <path>] [--reset-music]
 | `--demos <path>` | Yes | - | Path to folder containing `.dem` files |
 | `--output <path>` | No | `./output` | Output folder for `highlights.json` |
 | `--reset-music` | No | - | Reset music mapping (discard existing offsets) |
+| `--solo-kills <json>` | No | - | JSON object mapping demo filenames to tick arrays |
+| `--solo-kills-file <path>` | No | - | Path to JSON file with solo kills mapping |
 
 By default, `analyze` preserves existing `offset` values in `music-mapping.json`. Use `--reset-music` to regenerate mapping from scratch.
+
+**Solo kills**: Use `--solo-kills-file` to manually add single kill highlights. Get tick values from the `player-kills` command. Solo kills have the lowest priority (1) and will be removed if they collide with other highlights.
+
+```bash
+# Create a solo-kills.json file:
+# {
+#   "match.dem": [194953, 363443],
+#   "other.dem": [12345]
+# }
+
+node src/index.js analyze --demos ./demos --solo-kills-file ./solo-kills.json
+```
 
 #### Example
 
@@ -93,7 +107,7 @@ node src/index.js postprocess --highlights <path> [options]
 **Example:**
 
 ```bash
-node src/index.js postprocess --highlights ./output/highlights.json --clips ./output/clips --speedup 4 --overlay --slowmo 0.5
+node src/index.js postprocess --highlights ./output/highlights.json --clips ./output/clips --speedup 3 --overlay --slowmo 0.6
 ```
 
 #### Options
@@ -521,7 +535,7 @@ This helps identify:
 
 2. **Record** highlights using HLAE:
    ```bash
-   node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
+   node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
    ```
 
 3. **Merge** clips into final video:

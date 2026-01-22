@@ -1,6 +1,7 @@
 // Default priority levels for highlights (used for collision resolution)
 // Higher priority wins when highlights overlap
 const PRIORITIES = {
+  'solo': 1,        // Lowest priority - single kills added manually
   'clutch': 2,
   'knife': 3,
   'collateral': 4,
