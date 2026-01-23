@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { parseDemo } = require('./parser');
 const { detectHighlights } = require('./detector');
 const { resolveCollisions } = require('./resolver');
-const { recordAllHighlights, postprocessClip } = require('./recorder');
+const { recordAllHighlights, postprocessClip, applyMusicToVideo } = require('./recorder');
 const { mergeClips, cleanupTempFiles, generateSummary } = require('./merger');
 const { MusicPlaylist, saveMusicMapping, loadMusicMapping, resyncMusicMapping } = require('./music');
 
@@ -30,7 +30,7 @@ const DEFAULT_CONFIG = {
   slowmo: {
     duration: 1,          // seconds for the slowmo ramp-up effect (from peak slowdown back to normal)
     contrast: 1.2,        // peak contrast (1.0 = normal, higher = more punch)
-    brightness: 0.05,     // peak brightness boost (0 = none)
+    brightness: 0.1,     // peak brightness boost (0 = none)
     redBoost: 0.2,       // warm/red shift in midtones (0 = none, 0.2 = strong red)
     saturation: 1.1,      // slight saturation boost (1.0 = normal)
   },
@@ -38,10 +38,16 @@ const DEFAULT_CONFIG = {
   // Music overlay settings
   music: {
     folder: './music',    // path to folder with music tracks
-    volume: 0.7,          // music volume (0-1)
+    volume: 0.6,          // music volume (0-1)
     gameVolume: 1.0,      // game audio volume (0-1)
     fadeDuration: 2,      // fade in/out duration in seconds (at start and end of each clip)
-    enabled: true,        // enable music overlay by default
+  },
+  
+  // Postprocess defaults
+  postprocess: {
+    speedupMultiplier: 3,  // speed multiplier for idle periods (e.g., 4 for 4x speed)
+    showOverlay: true,       // show player info overlay
+    slowmoFactor: 0.6,       // slow motion factor (e.g., 0.5 for half speed)
   },
   
   // Detection settings
@@ -114,20 +120,30 @@ program
 
 // Postprocess command - apply effects to recorded clips
 program
-  .command('postprocess')
-  .description('Apply effects to recorded clips (slowmo, speedup, music, overlay)')
+  .command('postprocess-ui')
+  .description('Apply visual effects to recorded clips (slowmo, speedup, overlay)')
   .requiredOption('--highlights <path>', 'Path to highlights.json file')
   .option('--clips <path>', 'Path to folder containing raw clips', './output/clips')
   .option('--output <path>', 'Output folder for processed clips (default: ./output/clips_processed)')
   .option('--speedup <multiplier>', 'Speed up clutch gaps (e.g., 4 for 4x speed)', parseFloat)
   .option('--overlay', 'Show player name and highlight type overlay (fade in/out)')
   .option('--slowmo <factor>', 'Slow motion on last kill if headshot/noscope (e.g., 0.5 for half speed)', parseFloat)
-  .option('--music <folder>', 'Path to music folder (default: ./music)')
-  .option('--music-volume <percent>', 'Music volume 0-100 (default: 70)', parseFloat)
-  .option('--no-music', 'Disable music overlay')
   .option('--force', 'Re-process all clips even if already processed')
   .option('--id <highlightId>', 'Process only a specific highlight by ID')
-  .action(postprocessCommand);
+  .action(postprocessUICommand);
+
+// Apply music command - apply music to already processed clips (separate step for fast iteration)
+program
+  .command('postprocess-sound')
+  .description('Apply music to processed clips (separate step for fast music fine-tuning)')
+  .requiredOption('--highlights <path>', 'Path to highlights.json file')
+  .option('--clips <path>', 'Path to processed clips folder', './output/clips_processed')
+  .option('--output <path>', 'Output folder for clips with music (default: ./output/clips_final)')
+  .option('--music <folder>', 'Path to music folder (default: ./music)')
+  .option('--music-volume <percent>', 'Music volume 0-100 (default: 70)', parseFloat)
+  .option('--force', 'Re-apply music even if already applied')
+  .option('--id <highlightId>', 'Apply music only to a specific highlight by ID')
+  .action(postprocessSoundCommand);
 
 // Merge command - merge recorded clips into a single video
 program
@@ -155,6 +171,14 @@ program
   .requiredOption('--demo <path>', 'Path to demo file (.dem)')
   .requiredOption('--steamid <id>', 'Player Steam ID (64-bit format)')
   .action(playerKillsCommand);
+
+// Merge music command - merge all songs into one
+program
+  .command('merge-music')
+  .description('Merge all songs in music folder into one file')
+  .option('--music <folder>', 'Path to music folder', './music')
+  .option('--output <path>', 'Output path for merged song (default: named after first song)')
+  .action(mergeMusicCommand);
 
 program.parse(process.argv);
 
@@ -565,7 +589,7 @@ async function analyzeCommand(options) {
 
   // Generate music mapping if music folder exists
   const musicFolder = path.resolve(DEFAULT_CONFIG.music.folder);
-  if (fs.existsSync(musicFolder) && DEFAULT_CONFIG.music.enabled) {
+  if (fs.existsSync(musicFolder)) {
     console.log('\n--- Music Mapping ---');
     try {
       const playlist = new MusicPlaylist(musicFolder);
@@ -587,8 +611,9 @@ async function analyzeCommand(options) {
       if (allHighlights.length > 0) {
         const musicMappingFile = path.join(outputPath, 'music-mapping.json');
         
-        // Load existing mapping to preserve offsets (unless --reset-music is used)
+        // Load existing mapping to preserve offsets and overrideStartTime (unless --reset-music is used)
         let existingOffsets = {};
+        let existingOverrides = {};
         if (!resetMusic && fs.existsSync(musicMappingFile)) {
           try {
             const existingMapping = loadMusicMapping(musicMappingFile);
@@ -597,9 +622,15 @@ async function analyzeCommand(options) {
                 if (clipData.offset && clipData.offset !== 0) {
                   existingOffsets[clipId] = clipData.offset;
                 }
+                if (clipData.overrideStartTime) {
+                  existingOverrides[clipId] = clipData.overrideStartTime;
+                }
               }
               if (Object.keys(existingOffsets).length > 0) {
                 console.log(`  Preserving ${Object.keys(existingOffsets).length} existing offset(s)`);
+              }
+              if (Object.keys(existingOverrides).length > 0) {
+                console.log(`  Preserving ${Object.keys(existingOverrides).length} existing overrideStartTime(s)`);
               }
             }
           } catch (e) {
@@ -609,12 +640,17 @@ async function analyzeCommand(options) {
         
         let musicMapping = playlist.generateMapping(allHighlights, commonTickRate);
         
-        // Restore preserved offsets to new mapping
+        // Restore preserved offsets and overrides to new mapping
         let hasOffsets = false;
         for (const [clipId, offset] of Object.entries(existingOffsets)) {
           if (musicMapping.clips[clipId]) {
             musicMapping.clips[clipId].offset = offset;
             hasOffsets = true;
+          }
+        }
+        for (const [clipId, override] of Object.entries(existingOverrides)) {
+          if (musicMapping.clips[clipId]) {
+            musicMapping.clips[clipId].overrideStartTime = override;
           }
         }
         
@@ -817,7 +853,7 @@ async function recordCommand(options) {
     console.log(`Recorded ${recordedClips.length} raw clips`);
     console.log(`Clips saved to: ${path.join(outputPath, 'clips')}`);
     console.log(`\nNext steps:`);
-    console.log(`  1. Post-process clips: node src/index.js postprocess --highlights "${highlightsPath}" --clips "${path.join(outputPath, 'clips')}" --speedup 4 --overlay --slowmo 0.5`);
+    console.log(`  1. Post-process UI: node src/index.js postprocess-ui --highlights "${highlightsPath}" --clips "${path.join(outputPath, 'clips')}"`);
     console.log(`  2. Merge clips: node src/index.js merge --clips "${path.join(outputPath, 'clips')}"`);
 
     // Cleanup temp files
@@ -832,24 +868,17 @@ async function recordCommand(options) {
 /**
  * Post-process command - apply effects to recorded clips
  */
-async function postprocessCommand(options) {
+async function postprocessUICommand(options) {
   const highlightsPath = path.resolve(options.highlights);
   const clipsPath = path.resolve(options.clips);
   const outputPath = options.output 
     ? path.resolve(options.output) 
     : path.join(path.dirname(clipsPath), 'clips_processed');
-  const speedupMultiplier = options.speedup || null;
-  const showOverlay = options.overlay || false;
-  const slowmoFactor = options.slowmo || null;
+  const speedupMultiplier = options.speedup || DEFAULT_CONFIG.postprocess.speedupMultiplier;
+  const showOverlay = options.overlay || DEFAULT_CONFIG.postprocess.showOverlay;
+  const slowmoFactor = options.slowmo || DEFAULT_CONFIG.postprocess.slowmoFactor;
   const forceReprocess = options.force || false;
   const filterById = options.id || null;
-  
-  // Music options
-  const musicEnabled = options.music !== false;
-  const musicFolder = options.music ? path.resolve(options.music) : path.resolve(DEFAULT_CONFIG.music.folder);
-  const musicVolume = options.musicVolume !== undefined 
-    ? options.musicVolume / 100 
-    : DEFAULT_CONFIG.music.volume;
 
   // Validate highlights.json exists
   if (!fs.existsSync(highlightsPath)) {
@@ -890,15 +919,6 @@ async function postprocessCommand(options) {
     }
   }
 
-  // Load music mapping if music is enabled
-  let musicMapping = null;
-  if (musicEnabled && fs.existsSync(musicFolder)) {
-    const musicMappingPath = path.join(path.dirname(highlightsPath), 'music-mapping.json');
-    
-    if (fs.existsSync(musicMappingPath)) {
-      musicMapping = loadMusicMapping(musicMappingPath);
-    }
-  }
 
   // Find all .mp4 files in clips folder (sorted numerically by clip index)
   const clipFiles = fs.readdirSync(clipsPath)
@@ -934,7 +954,6 @@ async function postprocessCommand(options) {
   if (speedupMultiplier) console.log(`Speedup: ${speedupMultiplier}x`);
   if (showOverlay) console.log(`Overlay: enabled`);
   if (slowmoFactor) console.log(`Slowmo: ${slowmoFactor}x`);
-  if (musicMapping) console.log(`Music: enabled (${Object.keys(musicMapping.clips).length} clips mapped)`);
   if (forceReprocess) console.log(`Force: re-processing all clips`);
   if (filterById) console.log(`Filter: processing only ID ${filterById}`);
 
@@ -970,7 +989,6 @@ async function postprocessCommand(options) {
       speedup: speedupMultiplier,
       overlay: showOverlay,
       slowmo: slowmoFactor,
-      music: musicEnabled,
     });
 
     const outputClipPath = path.join(outputPath, clipFile);
@@ -989,21 +1007,12 @@ async function postprocessCommand(options) {
       console.log(`    Copying to output folder...`);
       fs.copyFileSync(sourceClipPath, outputClipPath);
       
-      // Get music info for this highlight
-      const musicInfo = musicMapping && musicMapping.clips[highlightId]
-        ? musicMapping.clips[highlightId]
-        : null;
-
       await postprocessClip({
         clipPath: outputClipPath,  // Process the copy, not the original
         highlight,
         speedupMultiplier,
         showOverlay,
         slowmoFactor,
-        musicInfo,
-        musicVolume,
-        gameVolume: DEFAULT_CONFIG.music.gameVolume,
-        musicFadeDuration: DEFAULT_CONFIG.music.fadeDuration,
       });
 
       // Mark as processed and save status immediately (so interrupts don't lose progress)
@@ -1031,7 +1040,206 @@ async function postprocessCommand(options) {
   console.log(`Output folder: ${outputPath}`);
   console.log(`Status saved to: ${statusPath}`);
   console.log(`\nOriginal clips preserved in: ${clipsPath}`);
+  console.log(`\nTo apply music to processed clips, run:`);
+  console.log(`  node src/index.js postprocess-sound --highlights "${highlightsPath}" --clips "${outputPath}"`);
   console.log(`\nTo merge processed clips into a single video, run:`);
+  console.log(`  node src/index.js merge --clips "${outputPath}"`);
+}
+
+/**
+ * Apply music command - apply music to already processed clips
+ */
+async function postprocessSoundCommand(options) {
+  const highlightsPath = path.resolve(options.highlights);
+  const clipsPath = path.resolve(options.clips);
+  const outputPath = options.output 
+    ? path.resolve(options.output) 
+    : path.join(path.dirname(clipsPath), 'clips_final');
+  const forceReprocess = options.force || false;
+  const filterById = options.id || null;
+  
+  // Music options
+  const musicFolder = options.music ? path.resolve(options.music) : path.resolve(DEFAULT_CONFIG.music.folder);
+  const musicVolume = options.musicVolume !== undefined 
+    ? options.musicVolume / 100 
+    : DEFAULT_CONFIG.music.volume;
+
+  // Validate highlights.json exists
+  if (!fs.existsSync(highlightsPath)) {
+    console.error(`Error: Highlights file not found: ${highlightsPath}`);
+    process.exit(1);
+  }
+
+  // Validate clips folder exists
+  if (!fs.existsSync(clipsPath)) {
+    console.error(`Error: Clips folder not found: ${clipsPath}`);
+    process.exit(1);
+  }
+
+  // Create output folder if it doesn't exist
+  if (!fs.existsSync(outputPath)) {
+    fs.mkdirSync(outputPath, { recursive: true });
+  }
+
+  // Parse highlights.json
+  let highlightsData;
+  try {
+    const content = fs.readFileSync(highlightsPath, 'utf-8');
+    highlightsData = JSON.parse(content);
+  } catch (err) {
+    console.error(`Error: Failed to parse highlights.json: ${err.message}`);
+    process.exit(1);
+  }
+
+  // Load music mapping
+  let musicMapping = null;
+  if (fs.existsSync(musicFolder)) {
+    const musicMappingPath = path.join(path.dirname(highlightsPath), 'music-mapping.json');
+    
+    if (fs.existsSync(musicMappingPath)) {
+      musicMapping = loadMusicMapping(musicMappingPath);
+    }
+  }
+
+  if (!musicMapping) {
+    console.error('Error: Music mapping not found. Run analyze first.');
+    process.exit(1);
+  }
+
+  // Find all .mp4 files in clips folder
+  const clipFiles = fs.readdirSync(clipsPath)
+    .filter(f => f.endsWith('.mp4'))
+    .sort((a, b) => {
+      const numA = parseInt(a.split('-')[0], 10) || 0;
+      const numB = parseInt(b.split('-')[0], 10) || 0;
+      return numA - numB;
+    });
+
+  if (clipFiles.length === 0) {
+    console.error('Error: No clip files found in folder');
+    process.exit(1);
+  }
+
+  // Build highlight ID to highlight mapping
+  const highlightMap = {};
+  for (const demo of highlightsData.demos) {
+    for (const highlight of demo.highlights) {
+      highlightMap[highlight.id] = {
+        ...highlight,
+        demoFile: demo.file,
+        tickRate: demo.tickRate,
+      };
+    }
+  }
+
+  // Load music status (to track which clips have music applied)
+  const statusPath = path.join(outputPath, 'music-status.json');
+  let musicStatus = {};
+  if (fs.existsSync(statusPath)) {
+    try {
+      musicStatus = JSON.parse(fs.readFileSync(statusPath, 'utf-8'));
+    } catch (e) {
+      musicStatus = {};
+    }
+  }
+
+  console.log('CS:GO Highlights Music Applier');
+  console.log('==============================');
+  console.log(`Source clips: ${clipsPath}`);
+  console.log(`Output folder: ${outputPath}`);
+  console.log(`Total clips: ${clipFiles.length}`);
+  console.log(`Music mapped: ${Object.keys(musicMapping.clips).length} clips`);
+  console.log(`Music volume: ${Math.round(musicVolume * 100)}%`);
+  if (forceReprocess) console.log(`Force: re-applying music to all clips`);
+  if (filterById) console.log(`Filter: applying only to ID ${filterById}`);
+
+  let processed = 0;
+  let skipped = 0;
+
+  for (const clipFile of clipFiles) {
+    // Extract highlight ID from filename
+    const match = clipFile.match(/-([a-f0-9]{12})\.mp4$/i);
+    if (!match) {
+      continue;
+    }
+    
+    const highlightId = match[1];
+    
+    // Apply ID filter if specified
+    if (filterById && highlightId !== filterById) {
+      continue;
+    }
+
+    const highlight = highlightMap[highlightId];
+    if (!highlight) {
+      console.log(`  Warning: No highlight data for ${clipFile}, skipping`);
+      continue;
+    }
+
+    // Get music info for this highlight
+    const musicInfo = musicMapping.clips[highlightId];
+    if (!musicInfo) {
+      console.log(`  Warning: No music mapping for ${highlightId}, skipping`);
+      skipped++;
+      continue;
+    }
+
+    // Generate hash for music settings to detect changes
+    const effectiveStartTime = musicInfo.overrideStartTime || musicInfo.startTime;
+    const settingsHash = `music:${effectiveStartTime}:${musicInfo.endTime}:${musicVolume}`;
+    
+    const sourceClipPath = path.join(clipsPath, clipFile);
+    const outputClipPath = path.join(outputPath, clipFile);
+    
+    // Check if already processed with same settings
+    if (!forceReprocess && musicStatus[highlightId] === settingsHash && fs.existsSync(outputClipPath)) {
+      skipped++;
+      continue;
+    }
+
+    console.log(`  Applying music to ${clipFile}...`);
+    console.log(`    Music: ${musicInfo.trackFilename} (${effectiveStartTime} - ${musicInfo.endTime})`);
+
+    try {
+      // Copy source clip to output folder
+      console.log(`    Copying to output folder...`);
+      fs.copyFileSync(sourceClipPath, outputClipPath);
+      
+      await applyMusicToVideo({
+        inputPath: outputClipPath,
+        musicPath: musicInfo.track,
+        musicStartTime: effectiveStartTime,
+        musicEndTime: musicInfo.endTime,
+        musicVolume: musicVolume,
+        gameVolume: DEFAULT_CONFIG.music.gameVolume,
+        fadeDuration: DEFAULT_CONFIG.music.fadeDuration,
+        slowmoSegments: [], // Already applied in postprocess
+        speedupSegments: [], // Already applied in postprocess
+        crf: 18,
+      });
+
+      // Mark as processed
+      musicStatus[highlightId] = settingsHash;
+      fs.writeFileSync(statusPath, JSON.stringify(musicStatus, null, 2));
+      processed++;
+      console.log(`    Done!`);
+    } catch (err) {
+      console.error(`    Error: ${err.message}`);
+    }
+  }
+
+  // Final status save
+  fs.writeFileSync(statusPath, JSON.stringify(musicStatus, null, 2));
+
+  console.log('\n==============================');
+  console.log('Music Application Complete!');
+  console.log('==============================');
+  console.log(`Processed: ${processed} clips`);
+  console.log(`Skipped: ${skipped} clips`);
+  console.log(`Output folder: ${outputPath}`);
+  console.log(`Status saved to: ${statusPath}`);
+  console.log(`\nProcessed clips preserved in: ${clipsPath}`);
+  console.log(`\nTo merge clips into a single video, run:`);
   console.log(`  node src/index.js merge --clips "${outputPath}"`);
 }
 
@@ -1359,6 +1567,126 @@ async function playerKillsCommand(options) {
     
   } catch (err) {
     console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Merge all music files in a folder into one
+ */
+async function mergeMusicCommand(options) {
+  const musicFolder = path.resolve(options.music);
+  
+  // Validate music folder exists
+  if (!fs.existsSync(musicFolder)) {
+    console.error(`Error: Music folder not found: ${musicFolder}`);
+    process.exit(1);
+  }
+
+  // Find all audio files
+  const audioExtensions = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
+  const audioFiles = fs.readdirSync(musicFolder)
+    .filter(f => audioExtensions.includes(path.extname(f).toLowerCase()))
+    .sort();
+
+  if (audioFiles.length === 0) {
+    console.error('Error: No audio files found in music folder');
+    process.exit(1);
+  }
+
+  if (audioFiles.length === 1) {
+    console.log('Only one audio file found, nothing to merge.');
+    process.exit(0);
+  }
+
+  // Output path - named after first song or custom
+  const firstSongName = path.parse(audioFiles[0]).name;
+  const outputPath = options.output 
+    ? path.resolve(options.output)
+    : path.join(musicFolder, `${firstSongName}_merged.mp3`);
+
+  console.log('CS:GO Highlights Music Merger');
+  console.log('=============================');
+  console.log(`Music folder: ${musicFolder}`);
+  console.log(`Files to merge: ${audioFiles.length}`);
+  audioFiles.forEach((f, i) => console.log(`  ${i + 1}. ${f}`));
+  console.log(`Output: ${outputPath}`);
+  console.log('');
+
+  // Create a temporary file list for ffmpeg concat
+  // Use forward slashes and escape single quotes for ffmpeg compatibility
+  const listPath = path.join(musicFolder, '_merge_list.txt');
+  const listContent = audioFiles
+    .map(f => {
+      const fullPath = path.join(musicFolder, f).replace(/\\/g, '/');
+      return `file '${fullPath.replace(/'/g, "'\\''")}'`;
+    })
+    .join('\n');
+  fs.writeFileSync(listPath, listContent);
+
+  try {
+    const { execSync } = require('child_process');
+    
+    // Get duration of each file before merge
+    console.log('\nFile durations:');
+    let totalExpected = 0;
+    audioFiles.forEach((f, i) => {
+      try {
+        const filePath = path.join(musicFolder, f);
+        const result = execSync(
+          `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
+          { encoding: 'utf-8' }
+        );
+        const duration = parseFloat(result.trim());
+        totalExpected += duration;
+        const mins = Math.floor(duration / 60);
+        const secs = Math.floor(duration % 60);
+        console.log(`  ${i + 1}. ${f}: ${mins}:${String(secs).padStart(2, '0')}`);
+      } catch (e) {
+        console.log(`  ${i + 1}. ${f}: (could not read duration)`);
+      }
+    });
+    const expectedMins = Math.floor(totalExpected / 60);
+    const expectedSecs = Math.floor(totalExpected % 60);
+    console.log(`  Expected total: ${expectedMins}:${String(expectedSecs).padStart(2, '0')}`);
+    
+    console.log('\nMerging audio files...');
+    
+    // Use ffmpeg to concatenate - copy codec if possible for exact duration preservation
+    execSync(
+      `ffmpeg -y -f concat -safe 0 -i "${listPath}" -c:a libmp3lame -q:a 2 "${outputPath}"`,
+      { stdio: 'pipe' }
+    );
+
+    // Clean up temp file
+    fs.unlinkSync(listPath);
+    
+    // Get duration of merged file
+    let mergedDuration = 0;
+    try {
+      const result = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${outputPath}"`,
+        { encoding: 'utf-8' }
+      );
+      mergedDuration = parseFloat(result.trim());
+    } catch (e) {}
+    const mergedMins = Math.floor(mergedDuration / 60);
+    const mergedSecs = Math.floor(mergedDuration % 60);
+
+    console.log('\n=============================');
+    console.log('Merge Complete!');
+    console.log('=============================');
+    console.log(`Output: ${outputPath}`);
+    console.log(`Merged duration: ${mergedMins}:${String(mergedSecs).padStart(2, '0')}`);
+    if (Math.abs(mergedDuration - totalExpected) > 1) {
+      console.log(`WARNING: Duration mismatch! Expected ${expectedMins}:${String(expectedSecs).padStart(2, '0')}`);
+    }
+  } catch (err) {
+    // Clean up temp file on error
+    if (fs.existsSync(listPath)) {
+      fs.unlinkSync(listPath);
+    }
+    console.error(`Error merging audio: ${err.message}`);
     process.exit(1);
   }
 }

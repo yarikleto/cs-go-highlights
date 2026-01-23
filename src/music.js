@@ -238,8 +238,10 @@ class MusicPlaylist {
 }
 
 /**
- * Resync music mapping - recalculates startTime/endTime based on offsets
- * Offsets accumulate: if clip 1 has offset +10, clip 2's startTime will also shift by 10
+ * Resync music mapping - applies offset to each clip's startTime/endTime
+ * Offset is SIMPLE: it shifts the startTime for THIS clip only, without affecting other clips
+ * offset: "1:30" means start 1:30 later than original
+ * offset: "-0:30" means start 0:30 earlier than original
  * @param {Object} mapping - The music mapping object
  * @returns {Object} Updated music mapping object
  */
@@ -250,87 +252,76 @@ function resyncMusicMapping(mapping) {
     return mapping;
   }
 
-  // Sort clips by their original startTime to maintain order
-  const sortedClips = clipIds
-    .map(id => ({ id, ...mapping.clips[id] }))
-    .sort((a, b) => parseTime(a.startTime) - parseTime(b.startTime));
-
   // Find the track list
   const tracks = mapping.tracks;
   if (!tracks || tracks.length === 0) {
     throw new Error('No tracks found in mapping');
   }
 
-  // Recalculate positions with offsets
-  let currentTrackIndex = 0;
-  let currentPosition = 0;
-  let accumulatedOffset = 0;
+  // Get total track duration
+  const totalMusicDuration = tracks.reduce((sum, t) => sum + t.duration, 0);
 
-  for (const clip of sortedClips) {
-    // Parse offset (can be "1:30" or 0 or "0:00")
-    const clipOffset = parseTime(clip.offset || 0);
-    const clipDuration = parseTime(clip.duration);
-    accumulatedOffset += clipOffset;
+  // Apply offset to each clip individually (no recalculation of sequence)
+  for (const clipId of clipIds) {
+    const clip = mapping.clips[clipId];
     
-    // Apply accumulated offset to current position
-    let targetPosition = currentPosition + accumulatedOffset;
+    // Parse offset (can be "1:30" or "-1:30" or 0 or "0:00")
+    const clipOffset = parseTime(clip.offset || 0);
+    
+    // Skip if no offset
+    if (clipOffset === 0) {
+      continue;
+    }
+    
+    const clipDuration = parseTime(clip.duration);
+    const originalStartTime = parseTime(clip.startTime);
+    
+    // Apply offset to original startTime
+    let newStartTime = originalStartTime + clipOffset;
     
     // Handle negative position (can't go before track start)
-    if (targetPosition < 0) {
-      console.warn(`  Warning: Clip "${clip.id}" offset would go before track start, clamping to 0`);
-      targetPosition = 0;
+    if (newStartTime < 0) {
+      console.warn(`  Warning: Clip "${clipId}" offset would go before track start, clamping to 0`);
+      newStartTime = 0;
     }
 
-    // Find the right track for this position
-    let trackOffset = 0;
-    for (let i = 0; i < currentTrackIndex; i++) {
-      trackOffset += tracks[i].duration;
+    // Handle position beyond total music duration
+    if (newStartTime >= totalMusicDuration) {
+      console.warn(`  Warning: Clip "${clipId}" offset goes beyond music duration, clamping to max`);
+      newStartTime = totalMusicDuration - clipDuration;
+      if (newStartTime < 0) newStartTime = 0;
     }
-    
-    // Adjust if we need to move to a different track due to offset
-    let absolutePosition = trackOffset + targetPosition;
-    let newTrackIndex = 0;
-    let posInTrack = absolutePosition;
+
+    const newEndTime = newStartTime + clipDuration;
+
+    // Find which track this position falls into
+    let posInTrack = newStartTime;
+    let trackIndex = 0;
     
     for (let i = 0; i < tracks.length; i++) {
       if (posInTrack < tracks[i].duration) {
-        newTrackIndex = i;
+        trackIndex = i;
         break;
       }
       posInTrack -= tracks[i].duration;
-      newTrackIndex = i + 1;
+      trackIndex = i + 1;
     }
 
-    if (newTrackIndex >= tracks.length) {
-      throw new Error(`Not enough music after applying offsets! Ran out at clip "${clip.id}"`);
-    }
-
-    const track = tracks[newTrackIndex];
-    const startTime = posInTrack;
-    const endTime = startTime + clipDuration;
-
-    // Check if clip fits in current track
-    if (endTime > track.duration) {
-      // Move to next track
-      if (newTrackIndex + 1 >= tracks.length) {
-        throw new Error(`Not enough music! Clip "${clip.id}" doesn't fit in remaining tracks.`);
-      }
-      newTrackIndex++;
+    if (trackIndex >= tracks.length) {
+      trackIndex = tracks.length - 1;
       posInTrack = 0;
     }
 
-    // Update the clip in mapping (using formatted times)
-    mapping.clips[clip.id] = {
-      ...mapping.clips[clip.id],
-      track: tracks[newTrackIndex].path,
-      trackFilename: tracks[newTrackIndex].filename,
-      startTime: formatTime(posInTrack),
-      endTime: formatTime(posInTrack + clipDuration),
-    };
+    const track = tracks[trackIndex];
 
-    // Update position for next clip (without offset, offset is applied separately)
-    currentPosition += clipDuration;
-    currentTrackIndex = newTrackIndex;
+    // Update the clip in mapping (using formatted times)
+    mapping.clips[clipId] = {
+      ...clip,
+      track: track.path,
+      trackFilename: track.filename,
+      startTime: formatTime(newStartTime),
+      endTime: formatTime(newEndTime),
+    };
   }
 
   return mapping;

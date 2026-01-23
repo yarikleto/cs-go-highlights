@@ -96,18 +96,19 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
 
-### `postprocess`
+### `postprocess-ui`
 
-Applies effects to recorded clips (slowmo, speedup, music, overlay). Tracks processed clips in `postprocess-status.json` to avoid re-processing.
+Applies visual effects to recorded clips (slowmo, speedup, overlay). Tracks processed clips in `postprocess-status.json` to avoid re-processing.
 
 ```bash
-node src/index.js postprocess --highlights <path> [options]
+node src/index.js postprocess-ui --highlights <path> [options]
 ```
 
 **Example:**
 
 ```bash
-node src/index.js postprocess --highlights ./output/highlights.json --clips ./output/clips --speedup 3 --overlay --slowmo 0.6
+# Uses defaults: speedup 3x, overlay enabled, slowmo 0.6x
+node src/index.js postprocess-ui --highlights ./output/highlights.json --clips ./output/clips
 ```
 
 #### Options
@@ -117,12 +118,9 @@ node src/index.js postprocess --highlights ./output/highlights.json --clips ./ou
 | `--highlights <path>` | Yes | - | Path to `highlights.json` file |
 | `--clips <path>` | No | `./output/clips` | Path to folder containing raw clips |
 | `--output <path>` | No | `./output/clips_processed` | Output folder for processed clips (originals preserved) |
-| `--speedup <multiplier>` | No | - | Speed up gaps between kills (e.g., `4` for 4x speed) |
-| `--overlay` | No | - | Show player name and highlight type overlay (fade in/out) |
-| `--slowmo <factor>` | No | - | Slow motion on last headshot/noscope kill (e.g., `0.5` for half speed) |
-| `--music <folder>` | No | `./music` | Path to folder with music files |
-| `--music-volume <percent>` | No | `70` | Music volume 0-100% |
-| `--no-music` | No | - | Disable music overlay |
+| `--speedup <multiplier>` | No | `3` | Speed up gaps between kills (e.g., `4` for 4x speed) |
+| `--overlay` | No | `true` | Show player name and highlight type overlay (fade in/out) |
+| `--slowmo <factor>` | No | `0.6` | Slow motion on last headshot/noscope kill (e.g., `0.5` for half speed) |
 | `--force` | No | - | Re-process all clips even if already processed |
 | `--id <highlightId>` | No | - | Process only a specific highlight by ID |
 
@@ -221,18 +219,20 @@ When using `--overlay`, a player info overlay is displayed in the bottom-left co
 Example with overlay:
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --overlay
+# Overlay is enabled by default
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
 ```
 
 Combine with speedup:
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4 --overlay
+# Custom speedup (4x instead of default 3x)
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4
 ```
 
 #### Slow Motion
 
-When using `--slowmo` with `postprocess`, an "impact" slow motion effect is applied:
+When using `--slowmo` with `postprocess-ui`, an "impact" slow motion effect is applied:
 
 **For kill-series and clutches:**
 - Finds the **last headshot or noscope kill** in the series (not necessarily the final kill)
@@ -257,13 +257,14 @@ When using `--slowmo` with `postprocess`, an "impact" slow motion effect is appl
 Example with slow motion:
 
 ```bash
-node src/index.js postprocess --highlights ./output/highlights.json --slowmo 0.5
+# Override default slowmo (0.6) with custom value
+node src/index.js postprocess-ui --highlights ./output/highlights.json --slowmo 0.5
 ```
 
 Combine all effects:
 
 ```bash
-node src/index.js postprocess --highlights ./output/highlights.json --speedup 4 --overlay --slowmo 0.5
+node src/index.js postprocess-ui --highlights ./output/highlights.json --speedup 4 --overlay --slowmo 0.5
 ```
 
 #### Music Overlay
@@ -284,13 +285,13 @@ Add background music to your clips during post-processing.
 **Example:**
 
 ```bash
-node src/index.js postprocess --highlights ./output/highlights.json --music ./music --music-volume 70
+node src/index.js postprocess-ui --highlights ./output/highlights.json --music ./music --music-volume 70
 ```
 
 Post-process without music:
 
 ```bash
-node src/index.js postprocess --highlights ./output/highlights.json --no-music
+node src/index.js postprocess-ui --highlights ./output/highlights.json --no-music
 ```
 
 **Music behavior with effects:**
@@ -310,7 +311,8 @@ node src/index.js postprocess --highlights ./output/highlights.json --no-music
       "startTime": "0:00",
       "endTime": "0:45",
       "duration": "0:45",
-      "offset": "0:00"
+      "offset": "0:00",
+      "overrideStartTime": "5:30"
     }
   }
 }
@@ -324,6 +326,15 @@ You can manually adjust music timing for individual clips by editing the `offset
 - `"offset": "-0:30"` — shift music 30 seconds backward (NOT RECOMMENDED, use positive offsets)
 
 After editing offsets, run `resync-music` to recalculate times:
+
+**Override Start Time (hack):**
+
+Use `overrideStartTime` to completely override the calculated `startTime` for a specific clip:
+
+- `"overrideStartTime": "5:30"` — use music starting at 5:30 regardless of calculated position
+- Does NOT affect `startTime`/`endTime` calculations for other clips
+- Takes priority over `startTime` when present during postprocess
+- Preserved when running `analyze` (unless `--reset-music` is used)
 
 ```bash
 node src/index.js resync-music
@@ -348,7 +359,46 @@ node src/index.js resync-music [--mapping <path>]
 1. Run `analyze` — generates `music-mapping.json` with `offset: 0` for all clips
 2. Edit `offset` values manually in `music-mapping.json`
 3. Run `resync-music` — recalculates `startTime` and `endTime`
-4. Run `record` — clips use updated music timings
+4. Run `postprocess-sound` — applies music to processed clips
+
+### `postprocess-sound`
+
+Applies music to already processed clips. Separate from `postprocess-ui` for fast music fine-tuning.
+
+```bash
+node src/index.js postprocess-sound --highlights <path> [--clips <path>] [options]
+```
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--highlights <path>` | Yes | - | Path to `highlights.json` file |
+| `--clips <path>` | No | `./output/clips_processed` | Path to processed clips folder (input) |
+| `--output <path>` | No | `./output/clips_final` | Output folder for clips with music |
+| `--music <folder>` | No | `./music` | Path to folder with music files |
+| `--music-volume <percent>` | No | `70` | Music volume 0-100% |
+| `--force` | No | - | Re-apply music even if already applied |
+| `--id <highlightId>` | No | - | Apply music only to a specific highlight |
+
+#### Workflow for Music Fine-tuning
+
+1. Run `postprocess-ui` with visual effects (slowmo, speedup, overlay) → `clips_processed/`
+2. Run `postprocess-sound` to add music → `clips_final/`
+3. Edit `music-mapping.json` (adjust `offset` or `overrideStartTime`)
+4. Run `resync-music` if you changed `offset` values
+5. Run `postprocess-sound --force` to re-apply music with new settings
+6. Repeat steps 3-5 until satisfied
+
+**Example:**
+
+```bash
+# Apply music to all processed clips
+node src/index.js postprocess-sound --highlights ./output/highlights.json
+
+# Re-apply music to a specific clip after editing mapping
+node src/index.js postprocess-sound --highlights ./output/highlights.json --force --id ced8b2df3663
+```
 
 #### Output
 
@@ -410,7 +460,7 @@ node src/index.js merge --clips ./output/clips_processed --cleanup
 Merge with 1-second fade transitions between clips:
 
 ```bash
-node src/index.js merge --clips ./output/clips_processed --transition 1
+node src/index.js merge --clips ./output/clips_final --transition 1
 ```
 
 #### Transitions

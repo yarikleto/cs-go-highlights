@@ -228,23 +228,17 @@ async function postprocessClip(options) {
     speedupMultiplier,
     showOverlay,
     slowmoFactor,
-    musicInfo,
-    musicVolume,
-    gameVolume,
-    musicFadeDuration,
   } = options;
 
   const speedupSegments = highlight.playback?.speedupSegments;
   const slowmotion = highlight.playback?.slowmotion;
   const hasSpeedup = speedupMultiplier && speedupSegments && speedupSegments.length > 0;
   const hasSlowmo = slowmoFactor && slowmotion;
-  const hasMusic = musicInfo && musicInfo.track;
 
   // Calculate total steps
   let totalSteps = 0;
   if (hasSlowmo) totalSteps++;
   if (hasSpeedup) totalSteps++;
-  if (hasMusic) totalSteps++;
   if (showOverlay) totalSteps++;
 
   if (totalSteps === 0) {
@@ -323,45 +317,6 @@ async function postprocessClip(options) {
     });
     
     console.log(`    [${currentStep}/${totalSteps}] Speedup applied successfully`);
-    currentStep++;
-  }
-  
-  // Apply music after speedup (music has special handling for slowmo/speedup)
-  if (hasMusic) {
-    console.log(`    [${currentStep}/${totalSteps}] Adding music overlay (${musicInfo.trackFilename})...`);
-    
-    // Build slowmo/speedup segment info for music processing
-    const tickRate = highlight.tickRate || 128;
-    const playbackStartTick = highlight.playback.startTick;
-    
-    // Slowmo segments (music should slow down here)
-    const slowmoSegments = hasSlowmo ? [{
-      startTime: (slowmotion.startTick - playbackStartTick) / tickRate,
-      endTime: (slowmotion.endTick - playbackStartTick) / tickRate,
-      factor: slowmoFactor,
-    }] : [];
-    
-    // Speedup segments (music should NOT speed up, just trim to match duration)
-    const speedupSegs = hasSpeedup ? speedupSegments.map(seg => ({
-      startTime: (seg.startTick - playbackStartTick) / tickRate,
-      endTime: (seg.endTick - playbackStartTick) / tickRate,
-      factor: speedupMultiplier,
-    })) : [];
-    
-    await applyMusicToVideo({
-      inputPath: clipPath,
-      musicPath: musicInfo.track,
-      musicStartTime: musicInfo.startTime,
-      musicEndTime: musicInfo.endTime,
-      musicVolume: musicVolume || 0.7,
-      gameVolume: gameVolume || 1.0,
-      fadeDuration: musicFadeDuration || 3,
-      slowmoSegments,
-      speedupSegments: speedupSegs,
-      crf: DEFAULT_SETTINGS.crf,
-    });
-    
-    console.log(`    [${currentStep}/${totalSteps}] Music overlay applied successfully`);
     currentStep++;
   }
   
@@ -1604,6 +1559,7 @@ module.exports = {
   recordHighlight,
   recordAllHighlights,
   postprocessClip,
+  applyMusicToVideo,
   formatHighlightType,
   DEFAULT_SETTINGS,
 };
