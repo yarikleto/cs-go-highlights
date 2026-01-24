@@ -95,7 +95,7 @@ const DEFAULT_SETTINGS = {
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, voiceChat } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -119,6 +119,7 @@ async function recordHighlight(options) {
     clipFolder,
     clipName,
     settings: DEFAULT_SETTINGS,
+    voiceChat,
   });
   
   // CFG filename (just the name, no path)
@@ -858,7 +859,7 @@ ${vdmActions}}
  * These settings are applied only during recording and don't affect the user's normal config
  */
 function generateRecordingCfg(options) {
-  const { highlight, clipFolder, clipName, settings } = options;
+  const { highlight, clipFolder, clipName, settings, voiceChat } = options;
   const { startTick, endTick } = highlight.playback;
   
   // Normalize path for CS:GO console (use forward slashes)
@@ -966,7 +967,7 @@ cl_disablefreezecam 1
 // === MIRV SOUND FILTER (block round announcer) ===
 // Filter out round win/lose announcements and music
 mirv_snd_filter clear
-mirv_snd_filter add block "*radio*"
+${voiceChat ? '// Radio sounds enabled (--voice-chat)' : 'mirv_snd_filter add block "*radio*"'}
 mirv_snd_filter add block "*terwin*"
 mirv_snd_filter add block "*ctwin*"
 mirv_snd_filter add block "*rounddraw*"
@@ -976,14 +977,44 @@ mirv_snd_filter add block "*bombpl*"
 mirv_snd_filter add block "*bombdef*"
 mirv_snd_filter add block "*music*"
 mirv_snd_filter add block "*announcer*"
-
+${voiceChat ? '' : `
 // === DISABLE VOICE/RADIO (no voip, no radio commands) ===
 voice_enable 0
 snd_voipvolume 0
 cl_mute_all_but_friends_and_party 1
 ignorerad
 voice_scale 0
+`}${voiceChat ? `
+// === VOICE ENABLED (both teams) ===
+voice_enable 1
+snd_voipvolume 1
+voice_scale 1
+voice_loopback 0
+cl_mute_all_but_friends_and_party 0
+cl_mute_enemy_team 0
+voice_caster_enable 1
+tv_relayvoice 1
 
+// === SHOW CHAT (override cl_draw_only_deathnotices) ===
+cl_draw_only_deathnotices 0
+hud_saytext_time 12
+cl_chatfilters 63
+cl_showtextmsg 1
+
+// === HIDE EVERYTHING EXCEPT KILLFEED AND CHAT ===
+cl_hud_healthammo_style 0
+cl_hud_background_alpha 0
+cl_hud_bomb_under_radar 0
+cl_hud_playercount_showcount 0
+cl_hud_playercount_pos 0
+cl_teamid_overhead_always 0
+cl_show_team_equipment 0
+cl_showloadout 0
+cl_radar_always_centered 0
+cl_drawhud_force_radar -1
+cl_drawhud_force_weaponselection -1
+cl_drawhud_force_deathnotices 1
+` : ''}
 // === KILLFEED SETTINGS ===
 // Killfeed duration - set very high so kills stay visible for entire clip
 hud_deathnotice_time 60
@@ -1457,7 +1488,7 @@ function cleanupTgaFiles(folder) {
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, voiceChat } = options;
   
   const recordedClips = [];
   const clipsFolder = path.join(outputPath, 'clips');
@@ -1543,12 +1574,14 @@ async function recordAllHighlights(options) {
         highlight,
         outputPath,
         clipIndex,
+        voiceChat,
       });
       
       recordedClips.push(clipPath);
       console.log(`    SUCCESS: ${path.basename(clipPath)}\n`);
     } catch (err) {
       console.error(`    FAILED: ${err.message}\n`);
+      throw err; // Stop on first error
     }
   }
   

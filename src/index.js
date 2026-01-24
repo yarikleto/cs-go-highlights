@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
   // Padding settings (in seconds) - adjust these to control clip length
   padding: {
     before: 4,  // seconds before highlight starts
-    after: 3,   // seconds after highlight ends
+    after: 5,   // seconds after highlight ends
   },
   
   // Speed-up settings for clutches (in seconds)
@@ -94,7 +94,6 @@ program
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
   .option('--output <path>', 'Output folder for highlights.json', './output')
   .option('--reset-music', 'Reset music mapping (discard existing offsets)')
-  .option('--solo-kills <json>', 'JSON object mapping demo filenames to tick arrays')
   .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
   .action(analyzeCommand);
 
@@ -116,6 +115,7 @@ program
   .option('--output <path>', 'Output folder for clips', './output')
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
+  .option('--voice-chat', 'Enable voice chat and text chat in recordings')
   .action(recordCommand);
 
 // Postprocess command - apply effects to recorded clips
@@ -187,10 +187,9 @@ async function analyzeCommand(options) {
   const outputPath = path.resolve(options.output);
   const resetMusic = options.resetMusic || false;
   
-  // Parse solo kills - JSON object: {"demo.dem": [tick1, tick2], ...}
+  // Parse solo kills from file - JSON object: {"demo.dem": [tick1, tick2], ...}
   let soloKillsByDemo = {};
   if (options.soloKillsFile) {
-    // Load from file
     const soloKillsPath = path.resolve(options.soloKillsFile);
     if (!fs.existsSync(soloKillsPath)) {
       console.error(`Error: Solo kills file not found: ${soloKillsPath}`);
@@ -203,17 +202,6 @@ async function analyzeCommand(options) {
       console.log(`Solo kills loaded from file: ${totalTicks} tick(s) across ${Object.keys(soloKillsByDemo).length} demo(s)`);
     } catch (e) {
       console.error(`Error parsing solo kills file: ${e.message}`);
-      process.exit(1);
-    }
-  } else if (options.soloKills) {
-    try {
-      soloKillsByDemo = JSON.parse(options.soloKills);
-      const totalTicks = Object.values(soloKillsByDemo).flat().length;
-      console.log(`Solo kills: ${totalTicks} tick(s) across ${Object.keys(soloKillsByDemo).length} demo(s)`);
-    } catch (e) {
-      console.error(`Error parsing --solo-kills JSON: ${e.message}`);
-      console.log('Expected format: \'{"demo.dem": [tick1, tick2], ...}\'');
-      console.log('Tip: Use --solo-kills-file to load from a JSON file instead');
       process.exit(1);
     }
   }
@@ -840,6 +828,7 @@ async function recordCommand(options) {
       outputPath,
       playerFilter,
       idFilter,
+      voiceChat: options.voiceChat || false,
     });
 
     if (recordedClips.length === 0) {
@@ -1252,6 +1241,19 @@ async function mergeCommand(options) {
   // Validate clips folder exists
   if (!fs.existsSync(clipsPath)) {
     console.error(`Error: Clips folder not found: ${clipsPath}`);
+    
+    // Suggest available folders
+    const outputDir = path.dirname(clipsPath);
+    if (fs.existsSync(outputDir)) {
+      const folders = fs.readdirSync(outputDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && d.name.startsWith('clips'))
+        .map(d => d.name);
+      if (folders.length > 0) {
+        console.error(`\nAvailable clip folders in ${outputDir}:`);
+        folders.forEach(f => console.error(`  - ${f}`));
+        console.error(`\nTry: node src/index.js merge --clips ${path.join(outputDir, folders[0])}`);
+      }
+    }
     process.exit(1);
   }
 

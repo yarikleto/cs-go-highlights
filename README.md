@@ -33,7 +33,6 @@ node src/index.js analyze --demos <path> [--output <path>] [--reset-music]
 | `--demos <path>` | Yes | - | Path to folder containing `.dem` files |
 | `--output <path>` | No | `./output` | Output folder for `highlights.json` |
 | `--reset-music` | No | - | Reset music mapping (discard existing offsets) |
-| `--solo-kills <json>` | No | - | JSON object mapping demo filenames to tick arrays |
 | `--solo-kills-file <path>` | No | - | Path to JSON file with solo kills mapping |
 
 By default, `analyze` preserves existing `offset` values in `music-mapping.json`. Use `--reset-music` to regenerate mapping from scratch.
@@ -80,7 +79,7 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
   3. Or when launching, choose "Play Legacy Version of CS:GO"
   
   The legacy version is typically installed at:
-  `C:\Steam\steamapps\common\Counter-Strike Global Offensive`
+  `C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive`
   
   **Note**: HLAE does not support Counter-Strike 2. Only the legacy CS:GO version is compatible.
 
@@ -95,6 +94,9 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 | `--output <path>` | No | `./output` | Output folder for clips |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
+| `--voice-chat` | No | - | Enable voice chat, radio commands, and text chat in recordings (shows full HUD) |
+
+**Note about `--voice-chat`**: This flag enables voice and text chat from both teams, but due to CS:GO limitations, it also shows the full spectator HUD (player panels, radar, etc.). There is no way to show only chat without the rest of the HUD in demo playback mode.
 
 ### `postprocess-ui`
 
@@ -156,7 +158,7 @@ Settings automatically applied during recording:
 | **X-Ray** | Disabled (spec_show_xray 0) |
 | **Overlays** | Disabled (net_graph 0, cl_showfps 0) |
 | **Music** | Muted (all music volumes set to 0) |
-| **Voice** | Muted (voice_enable 0, no radio sounds) |
+| **Voice** | Muted by default (use `--voice-chat` to enable, but shows full HUD) |
 | **Graphics** | High quality (HDR, postprocessing enabled) |
 | **Tracers** | Enabled (r_drawtracers_firstperson 1) |
 
@@ -167,7 +169,7 @@ After recording completes, CS:GO closes and your original settings remain unchan
 Record all highlights:
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
 ```
 
 **Important**: The `--csgo` path must point to the Legacy CS:GO installation folder containing `csgo.exe`, not CS2.
@@ -175,19 +177,19 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 Record only highlights from a specific player:
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --player 76561198012345678
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --player 76561198012345678
 ```
 
 Record a single highlight by ID (useful for debugging):
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --id b8c4f695d6d9
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --id b8c4f695d6d9
 ```
 
 Record highlights with 4x speedup during gaps between kills:
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4
 ```
 
 #### Speedup (Clutches & Kill Series)
@@ -220,14 +222,14 @@ Example with overlay:
 
 ```bash
 # Overlay is enabled by default
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
 ```
 
 Combine with speedup:
 
 ```bash
 # Custom speedup (4x instead of default 3x)
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4
+node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\hlae.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive" --speedup 4
 ```
 
 #### Slow Motion
