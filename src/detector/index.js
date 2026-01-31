@@ -91,11 +91,12 @@ function detectHighlights(demoData, config) {
   highlights.push(...knifeHighlights);
 
   // Step 5: Detect one taps (excluding kills in series)
-  // One tap = single precise headshot without spraying
+  // One tap = first shot of round is a headshot, no follow-up shots
   if (shotsByPlayer) {
     const oneTapHighlights = detectOneTaps(
       kills,
       shotsByPlayer,
+      rounds,
       tickRate,
       killPoints,
       priorities,

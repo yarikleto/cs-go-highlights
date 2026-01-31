@@ -1,161 +1,200 @@
 /**
- * @fileoverview One Tap kill detection module
+ * @fileoverview One-Tap kill detection module
  * 
- * Detects "one tap" kills - precise single-shot headshots where the player
- * didn't spray or burst fire. A true one tap means:
- * - Headshot kill
- * - Only ONE shot was fired in a window around the kill
- * - No other shots ~2 seconds before or ~1 second after
+ * Detects impressive one-tap kills:
  * 
- * This distinguishes intentional precision shots from lucky spray headshots.
+ * For pistols/rifles/machine guns (cold one-tap):
+ * 1. Player hasn't shot since round start (waiting for the perfect moment)
+ * 2. First bullet is a headshot
+ * 3. Player doesn't shoot for ~2 seconds after the kill
  * 
- * Weapons that can one tap:
- * - Pistols (deagle, revolver one taps are iconic)
- * - Rifles (AK-47, M4A1-S one taps are skill shots)
- * - Scout (SSG08) - scout headshots require skill, not guaranteed kill
+ * For snipers AWP/Scout (wallbang one-tap):
+ * 1. Wallbang headshot (penetration kill)
+ * 2. Player doesn't shoot for ~2 seconds after the kill
+ * (shots before kill are allowed)
+ * 
+ * Allowed weapons:
+ * - Pistols (deagle, glock, usp, p250, etc.)
+ * - Rifles (AK-47, M4, FAMAS, Galil, AUG, SG553)
+ * - Snipers (AWP, Scout/SSG08) - wallbang only
+ * - Machine guns (M249, Negev)
  * 
  * Excluded:
- * - Shotguns (designed to one-shot at close range)
- * - Knives (don't shoot)
- * - SMGs (spray weapons, not precision)
- * - AWP, SCAR-20, G3SG1 (one-shot kills are expected)
+ * - Auto-snipers (G3SG1, SCAR-20) - spam weapons
+ * - Shotguns - close range one-shots are expected
+ * - SMGs - spray weapons, not precision
+ * - Knives - don't shoot
  */
 
 import { KILL_POINTS, PRIORITIES, DETECTION } from './constants.js';
 import { createOneTapHighlight } from './highlightFactory.js';
 
 /**
- * Weapons excluded from one tap detection
- * Shotguns and SMGs are not precision weapons
+ * Weapons excluded from one-tap detection
  */
 const EXCLUDED_WEAPONS = [
-  // Shotguns
+  // Auto-snipers (spam weapons, not precision)
+  'g3sg1', 'scar20',
+  // Shotguns (one-shot at close range is expected)
   'nova', 'xm1014', 'mag7', 'sawedoff',
-  // SMGs (spray weapons)
+  // SMGs (spray weapons, not precision)
   'mac10', 'mp9', 'mp7', 'mp5sd', 'ump45', 'p90', 'bizon',
-  // Machine guns
-  'm249', 'negev',
 ];
 
 /**
- * Sniper weapons excluded from one-tap detection
- * AWP/auto-snipers one-shot kills are expected, not impressive
- * Scout (SSG08) is NOT excluded - scout headshots require skill
+ * Snipers that require wallbang for one-tap
  */
-const EXCLUDED_SNIPERS = [
-  'awp', 'g3sg1', 'scar20',
-];
+const SNIPERS_REQUIRE_WALLBANG = ['awp', 'ssg08'];
 
 /**
- * Check if weapon can one tap (not excluded)
+ * Check if weapon is allowed for one-tap
  * 
  * @param {string} weapon - Weapon name
  * @returns {boolean} True if weapon can qualify for one tap
  */
-function canOneTap(weapon) {
+function isAllowedWeapon(weapon) {
   if (!weapon) return false;
   const normalized = weapon.toLowerCase().replace('weapon_', '');
-  return !EXCLUDED_WEAPONS.some(w => normalized.includes(w));
+  
+  // Check if it's an excluded weapon
+  if (EXCLUDED_WEAPONS.some(w => normalized.includes(w))) {
+    return false;
+  }
+  
+  // Also exclude knife
+  if (normalized.includes('knife') || normalized.includes('bayonet')) {
+    return false;
+  }
+  
+  return true;
 }
 
 /**
- * Check if weapon is an excluded sniper (AWP, auto-snipers)
- * Scout (SSG08) is NOT excluded - scout headshots are impressive
+ * Check if weapon is a sniper that requires wallbang
  * 
  * @param {string} weapon - Weapon name
- * @returns {boolean} True if weapon is an excluded sniper
+ * @returns {boolean} True if sniper requiring wallbang
  */
-function isExcludedSniper(weapon) {
+function isSniperRequiringWallbang(weapon) {
   if (!weapon) return false;
   const normalized = weapon.toLowerCase().replace('weapon_', '');
-  return EXCLUDED_SNIPERS.some(w => normalized.includes(w));
+  return SNIPERS_REQUIRE_WALLBANG.some(w => normalized.includes(w));
 }
 
 /**
- * Count shots in a time window around a specific tick
+ * Find the round that contains a specific tick
+ * 
+ * @param {Array} rounds - All rounds from demo
+ * @param {number} tick - Tick to find round for
+ * @returns {Object|null} Round object or null if not found
+ */
+function findRoundForTick(rounds, tick) {
+  for (const round of rounds) {
+    if (tick >= round.startTick && (round.endTick === null || tick <= round.endTick)) {
+      return round;
+    }
+  }
+  return null;
+}
+
+/**
+ * Count shots in a time window
  * 
  * @param {Array} shots - Array of shot ticks for the player
- * @param {number} killTick - Tick when the kill occurred
- * @param {number} tickRate - Server tick rate
- * @param {number} windowBefore - Seconds before kill to check
- * @param {number} windowAfter - Seconds after kill to check
- * @returns {number} Number of shots in the window
+ * @param {number} startTick - Start of window (inclusive)
+ * @param {number} endTick - End of window (inclusive)
+ * @returns {number} Number of shots in window
  */
-function countShotsInWindow(shots, killTick, tickRate, windowBefore, windowAfter) {
+function countShotsInWindow(shots, startTick, endTick) {
   if (!shots || shots.length === 0) return 0;
-  
-  const windowStartTick = killTick - (windowBefore * tickRate);
-  const windowEndTick = killTick + (windowAfter * tickRate);
   
   let count = 0;
   for (const shotTick of shots) {
-    if (shotTick >= windowStartTick && shotTick <= windowEndTick) {
+    if (shotTick >= startTick && shotTick <= endTick) {
       count++;
     }
   }
-  
   return count;
 }
 
 /**
- * Check if a kill qualifies as a one tap
+ * Check if a kill qualifies as a cold one-tap
  * 
  * Criteria:
  * 1. Must be a headshot
- * 2. Weapon must not be excluded (shotguns, SMGs)
- * 3. Must not be a knife kill
- * 4. If sniper - must be noscope (regular sniper headshots are expected)
- * 5. Only 1 shot in the detection window
+ * 2. Weapon must be allowed (pistol, rifle, machine gun)
+ * 3. Exactly 1 shot from round start until windowAfter seconds after kill
+ *    (meaning: first shot of the round was the kill, no follow-up)
  * 
  * @param {Object} kill - Kill event from parser
  * @param {Array} playerShots - All shots by the attacker
+ * @param {Array} rounds - All rounds from demo
  * @param {number} tickRate - Server tick rate
  * @param {Object} detection - Detection settings
- * @returns {boolean} True if this is a one tap
+ * @returns {boolean} True if this is a cold one-tap
  */
-function isOneTap(kill, playerShots, tickRate, detection) {
+function isOneTap(kill, playerShots, rounds, tickRate, detection) {
   // Must be headshot
   if (!kill.headshot) return false;
   
-  // Knife kills are not one taps
-  if (kill.isKnife) return false;
+  // Weapon must be allowed
+  if (!isAllowedWeapon(kill.weapon)) return false;
   
-  // Check weapon is not excluded (shotguns, SMGs, etc.)
-  if (!canOneTap(kill.weapon)) return false;
+  const { windowAfter } = detection.oneTap;
+  const windowAfterTicks = windowAfter * tickRate;
   
-  // AWP and auto-snipers are excluded (one-shot kills are expected)
-  // Scout (SSG08) is allowed - scout headshots require skill
-  if (isExcludedSniper(kill.weapon)) return false;
+  // Snipers (AWP, Scout) have different criteria:
+  // - Must be wallbang headshot
+  // - Shots BEFORE kill are OK (ignored)
+  // - No shots AFTER kill for windowAfter seconds
+  if (isSniperRequiringWallbang(kill.weapon)) {
+    // Must be wallbang
+    if (!kill.penetrated || kill.penetrated === 0) {
+      return false;
+    }
+    
+    // Check no shots after kill
+    const shotsAfter = countShotsInWindow(
+      playerShots,
+      kill.tick + 1,
+      kill.tick + windowAfterTicks
+    );
+    
+    return shotsAfter === 0;
+  }
   
-  // Count shots in window
-  const { windowBefore, windowAfter } = detection.oneTap;
-  const shotCount = countShotsInWindow(
-    playerShots,
-    kill.tick,
-    tickRate,
-    windowBefore,
-    windowAfter
-  );
+  // Other weapons (pistols, rifles, machine guns):
+  // - Cold criteria: exactly 1 shot from round start to windowAfter after kill
   
-  // One tap = exactly 1 shot in the window
+  // Find the round for this kill
+  const round = findRoundForTick(rounds, kill.tick);
+  if (!round) return false;
+  
+  // Count shots in the entire window
+  const windowEndTick = kill.tick + windowAfterTicks;
+  const shotCount = countShotsInWindow(playerShots, round.startTick, windowEndTick);
+  
+  // Must be exactly 1 shot (the killing shot)
   return shotCount === 1;
 }
 
 /**
- * Detect one tap kills from all kills in demo
+ * Detect cold one-tap kills from all kills in demo
  * 
  * @param {Array} kills - All kill events from parser
  * @param {Object} shotsByPlayer - Map of steamId -> array of shot ticks
+ * @param {Array} rounds - All rounds from demo
  * @param {number} tickRate - Server tick rate
  * @param {Object} [killPoints=KILL_POINTS] - Point configuration
  * @param {Object} [priorities=PRIORITIES] - Priority configuration
  * @param {Object} [detection=DETECTION] - Detection configuration
- * @param {Set} [excludedKillTicks=new Set()] - Kill ticks to exclude (e.g., already in kill series)
+ * @param {Set} [excludedKillTicks=new Set()] - Kill ticks to exclude
  * @returns {Array} Array of one tap highlight objects
  */
 function detectOneTaps(
   kills,
   shotsByPlayer,
+  rounds,
   tickRate,
   killPoints = KILL_POINTS,
   priorities = PRIORITIES,
@@ -165,7 +204,7 @@ function detectOneTaps(
   const highlights = [];
   
   for (const kill of kills) {
-    // Skip if this kill is already part of another highlight (e.g., kill series)
+    // Skip if this kill is already part of another highlight
     if (excludedKillTicks.has(kill.tick)) continue;
     
     const attackerSteamId = kill.attacker.steamId;
@@ -173,7 +212,7 @@ function detectOneTaps(
     
     const playerShots = shotsByPlayer[attackerSteamId] || [];
     
-    if (isOneTap(kill, playerShots, tickRate, detection)) {
+    if (isOneTap(kill, playerShots, rounds, tickRate, detection)) {
       const highlight = buildOneTapHighlight(kill, killPoints, priorities);
       highlights.push(highlight);
     }
@@ -192,7 +231,6 @@ function detectOneTaps(
  * @returns {Object} One tap highlight object
  */
 function buildOneTapHighlight(kill, killPoints, priorities) {
-  // Calculate points based on weapon category + one tap bonus
   const basePoints = getBasePoints(kill, killPoints);
   const totalPoints = basePoints + (killPoints.one_tap_bonus || 3);
   
@@ -217,14 +255,11 @@ function buildOneTapHighlight(kill, killPoints, priorities) {
 function getBasePoints(kill, killPoints) {
   const category = kill.weaponCategory || 'rifle';
   
-  // All one taps are headshots, so use headshot points
   switch (category) {
     case 'pistol':
       return killPoints.pistol_headshot || 4;
-    case 'sniper':
-      return kill.noscope 
-        ? (killPoints.sniper_noscope || 7)
-        : (killPoints.sniper_headshot || 6);
+    case 'machinegun':
+      return killPoints.machinegun_headshot || killPoints.rifle_headshot || 5;
     default:
       return killPoints.rifle_headshot || 5;
   }
@@ -244,5 +279,5 @@ export {
   detectOneTaps,
   getOneTapKillTicks,
   isOneTap,
-  canOneTap,
+  isAllowedWeapon,
 };

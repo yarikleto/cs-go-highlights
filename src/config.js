@@ -269,10 +269,10 @@ export const DETECTION = Object.freeze({
   // Shot tracking
   maxShotAge: 15,           // Max seconds to track shots
   maxLookback: 3,           // Max seconds to look back for firstShotTick
-  // One tap detection
+  // Cold one-tap detection
+  // Player must not shoot from round start, first shot = headshot kill, no shots after
   oneTap: {
-    windowBefore: 2,        // Seconds before kill to check for other shots
-    windowAfter: 1,         // Seconds after kill to check for other shots
+    windowAfter: 2,         // Seconds after kill with no shots allowed
   },
 });
 

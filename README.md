@@ -783,14 +783,19 @@ Manually added single kill highlights via `--solo-kills-file`. Lowest priority -
 
 ### 2. One-Tap (Priority: 1.5)
 
-A single headshot kill with exactly one bullet fired within the time window (2s before, 1s after the kill).
+Impressive precision headshots with different criteria by weapon type:
 
-**Qualification criteria:**
-- Must be a headshot
-- Only one shot fired in the detection window
-- Excludes shotguns, SMGs, machine guns
-- Excludes AWP and auto-snipers (G3SG1, SCAR-20) - one-shot kills are expected
-- SSG08 (Scout) headshots qualify as one-taps
+**Pistols/Rifles/Machine guns (cold one-tap):**
+- No shots from round start until the kill (player was waiting)
+- First bullet is a headshot
+- No shots for 2 seconds after the kill
+
+**AWP/Scout (wallbang one-tap):**
+- Wallbang headshot (penetration kill through wall/object)
+- No shots for 2 seconds after the kill
+- Shots before kill are allowed
+
+**Excluded weapons:** Auto-snipers (G3SG1, SCAR-20), Shotguns, SMGs, Knives
 
 **Note:** Kills that are part of a kill-series are excluded from one-tap detection.
 

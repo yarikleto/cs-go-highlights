@@ -230,6 +230,7 @@ function parseDemo(filePath) {
         weaponCategory,
         headshot: e.headshot,
         noscope: e.noscope || false,
+        penetrated: e.penetrated || 0, // Number of walls penetrated (wallbang)
         isKnife: weaponCategory === 'knife',
         isHeadshotSeriesWeapon: isHeadshotSeriesWeapon(e.weapon),
         round: rounds.length + 1,
