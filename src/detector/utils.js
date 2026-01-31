@@ -5,7 +5,7 @@
  * Following DRY principle - common logic extracted here.
  */
 
-const { KILL_POINTS, WEAPON_CATEGORIES } = require('./constants');
+import { KILL_POINTS, WEAPON_CATEGORIES } from './constants.js';
 
 /**
  * Calculate points for a single kill based on weapon type and shot placement
@@ -109,7 +109,7 @@ function calculateTotalPoints(kills, killPoints = KILL_POINTS) {
   return kills.reduce((sum, kill) => sum + calculateKillPoints(kill, killPoints), 0);
 }
 
-module.exports = {
+export {
   calculateKillPoints,
   calculateTotalPoints,
   groupBy,

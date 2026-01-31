@@ -1,6 +1,6 @@
-const fs = require('fs');
-const path = require('path');
-const { spawn } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { spawn } from 'child_process';
 
 // Supported audio formats
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'];
@@ -355,7 +355,7 @@ function saveMusicMapping(filePath, mapping) {
   fs.writeFileSync(filePath, JSON.stringify(mapping, null, 2));
 }
 
-module.exports = {
+export {
   MusicPlaylist,
   analyzeMusicFolder,
   getAudioDuration,

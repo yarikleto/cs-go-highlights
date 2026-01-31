@@ -10,15 +10,15 @@
  * 6. Output highlights.json
  */
 
-const path = require('path');
-const fs = require('fs');
-const { parseDemo } = require('../../parser');
-const { detectHighlights } = require('../../detector');
-const { resolveCollisions } = require('../../resolver');
-const { MusicPlaylist, saveMusicMapping, loadMusicMapping, resyncMusicMapping } = require('../../music');
-const { DEFAULT_CONFIG } = require('../config');
-const { validateDirExists, ensureDir, parseJsonFile } = require('../validators');
-const { enrichAllHighlights } = require('../services/highlightEnricher');
+import path from 'path';
+import fs from 'fs';
+import { parseDemo } from '../../parser.js';
+import { detectHighlights } from '../../detector.js';
+import { resolveCollisions } from '../../resolver.js';
+import { MusicPlaylist, saveMusicMapping, loadMusicMapping, resyncMusicMapping } from '../../music.js';
+import { DEFAULT_CONFIG } from '../config.js';
+import { validateDirExists, ensureDir, parseJsonFile } from '../validators.js';
+import { enrichAllHighlights } from '../services/highlightEnricher.js';
 
 /**
  * Main analyze command handler
@@ -396,4 +396,4 @@ function restoreOffsets(mapping, offsets, overrides) {
   return hasOffsets;
 }
 
-module.exports = { analyzeCommand };
+export { analyzeCommand };

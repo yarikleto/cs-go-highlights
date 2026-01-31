@@ -32,4 +32,4 @@
  * @see ./cli/index.js for the main implementation
  */
 
-require('./cli/index');
+import './cli/index.js';

@@ -67,7 +67,7 @@ const KILL_POINTS = Object.freeze({
  */
 const CLUTCH_POINTS_MULTIPLIER = 10;
 
-module.exports = {
+export {
   HIGHLIGHT_TYPES,
   PRIORITIES,
   WEAPON_CATEGORIES,

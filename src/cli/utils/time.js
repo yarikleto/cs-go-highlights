@@ -67,7 +67,7 @@ function roundSeconds(seconds) {
   return Math.round(seconds * 100) / 100;
 }
 
-module.exports = {
+export {
   formatTime,
   formatTimeLong,
   ticksToSeconds,

@@ -27,8 +27,8 @@
  * node src/index.js merge --clips ./output/clips_final
  */
 
-const { program } = require('commander');
-const {
+import { program } from 'commander';
+import {
   analyzeCommand,
   resyncMusicCommand,
   recordCommand,
@@ -38,7 +38,7 @@ const {
   compressCommand,
   playerKillsCommand,
   mergeMusicCommand,
-} = require('./commands');
+} from './commands/index.js';
 
 // CLI metadata
 program

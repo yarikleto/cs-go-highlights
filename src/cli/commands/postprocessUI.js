@@ -9,11 +9,11 @@
  * Original clips are preserved; processed copies are created.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { postprocessClip } = require('../../recorder');
-const { DEFAULT_CONFIG } = require('../config');
-const { 
+import path from 'path';
+import fs from 'fs';
+import { postprocessClip } from '../../recorder.js';
+import { DEFAULT_CONFIG } from '../config.js';
+import { 
   validateFileExists, 
   validateDirExists, 
   ensureDir, 
@@ -21,7 +21,7 @@ const {
   buildHighlightMap,
   sortClipFiles,
   extractHighlightId,
-} = require('../validators');
+} from '../validators.js';
 
 /**
  * Main postprocess-ui command handler
@@ -255,4 +255,4 @@ function printCompletion(processed, skipped, outputPath, statusPath, clipsPath, 
   console.log(`  node src/index.js merge --clips "${outputPath}"`);
 }
 
-module.exports = { postprocessUICommand };
+export { postprocessUICommand };

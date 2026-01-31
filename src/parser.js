@@ -1,5 +1,5 @@
-const fs = require('fs');
-const { DemoFile } = require('demofile');
+import fs from 'fs';
+import { DemoFile } from 'demofile';
 
 // Weapon categories for point calculation
 const PISTOL_WEAPONS = [
@@ -366,7 +366,7 @@ function parseDemo(filePath) {
   });
 }
 
-module.exports = {
+export {
   parseDemo,
   isKnife,
   isHeadshotSeriesWeapon,

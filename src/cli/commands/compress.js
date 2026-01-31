@@ -5,10 +5,10 @@
  * Power level 1-10 maps to CRF 18-36.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { runFfmpegCompress, powerToCrf } = require('../utils/ffmpeg');
-const { validateFileExists, validateRange } = require('../validators');
+import path from 'path';
+import fs from 'fs';
+import { runFfmpegCompress, powerToCrf } from '../utils/ffmpeg.js';
+import { validateFileExists, validateRange } from '../validators.js';
 
 /**
  * Main compress command handler
@@ -99,4 +99,4 @@ function printCompressCompletion(params) {
   console.log(`Size reduction: ${params.reduction}%`);
 }
 
-module.exports = { compressCommand };
+export { compressCommand };

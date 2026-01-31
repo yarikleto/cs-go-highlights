@@ -11,8 +11,8 @@
  * the gap between "what happened" (detection) and "how to show it" (recording).
  */
 
-const crypto = require('crypto');
-const { roundSeconds, secondsToTicks } = require('../utils/time');
+import crypto from 'crypto';
+import { roundSeconds, secondsToTicks } from '../utils/time.js';
 
 /**
  * Enrich a highlight with playback metadata
@@ -404,7 +404,7 @@ function enrichAllHighlights(highlights, demoData, demoFile, config) {
   return highlights.map(h => enrichHighlight(h, demoData, demoFile, config));
 }
 
-module.exports = {
+export {
   enrichHighlight,
   enrichAllHighlights,
   getHighlightTickRange,

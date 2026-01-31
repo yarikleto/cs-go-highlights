@@ -10,7 +10,7 @@
  * - Consistent validation and defaults
  */
 
-const { HIGHLIGHT_TYPES, PRIORITIES } = require('./constants');
+import { HIGHLIGHT_TYPES, PRIORITIES } from './constants.js';
 
 /**
  * Base highlight properties shared by all types
@@ -182,7 +182,7 @@ function createClutchHighlight({
   };
 }
 
-module.exports = {
+export {
   createKillSeriesHighlight,
   createCollateralHighlight,
   createKnifeHighlight,

@@ -2,14 +2,12 @@
  * @fileoverview Command handlers barrel export
  */
 
-module.exports = {
-  ...require('./analyze'),
-  ...require('./record'),
-  ...require('./postprocessUI'),
-  ...require('./postprocessSound'),
-  ...require('./merge'),
-  ...require('./compress'),
-  ...require('./playerKills'),
-  ...require('./mergeMusic'),
-  ...require('./resyncMusic'),
-};
+export * from './analyze.js';
+export * from './record.js';
+export * from './postprocessUI.js';
+export * from './postprocessSound.js';
+export * from './merge.js';
+export * from './compress.js';
+export * from './playerKills.js';
+export * from './mergeMusic.js';
+export * from './resyncMusic.js';

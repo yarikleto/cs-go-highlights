@@ -5,10 +5,10 @@
  * Optionally adds fade transitions between clips.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { mergeClips, generateSummary } = require('../../merger');
-const { validateDirExists, ensureDir, sortClipFiles } = require('../validators');
+import path from 'path';
+import fs from 'fs';
+import { mergeClips, generateSummary } from '../../merger.js';
+import { validateDirExists, ensureDir, sortClipFiles } from '../validators.js';
 
 /**
  * Main merge command handler
@@ -133,4 +133,4 @@ function printMergeCompletion(summary) {
   console.log(`File size: ${summary.fileSizeMB} MB`);
 }
 
-module.exports = { mergeCommand };
+export { mergeCommand };

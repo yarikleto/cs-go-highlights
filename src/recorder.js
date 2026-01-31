@@ -1,7 +1,12 @@
-const { spawn, execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const { parseTime } = require('./music');
+import { spawn, execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { parseTime } from './music.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Track active processes for cleanup on SIGINT/SIGTERM
 let activeHlaeProcess = null;
@@ -1445,26 +1450,6 @@ function buildSpeedupFilter(timeline, speedMultiplier) {
 }
 
 /**
- * Builds atempo filter chain for speeds > 2.0
- * atempo only supports 0.5-2.0 range, so we chain multiple for higher speeds
- */
-function buildAtempoChain(speedMultiplier) {
-  const filters = [];
-  let remaining = speedMultiplier;
-  
-  while (remaining > 2.0) {
-    filters.push('atempo=2.0');
-    remaining /= 2.0;
-  }
-  
-  if (remaining > 1.0) {
-    filters.push(`atempo=${remaining.toFixed(2)}`);
-  }
-  
-  return filters.length > 0 ? filters.join(',') : 'atempo=1.0';
-}
-
-/**
  * Cleans up TGA/WAV files after encoding
  */
 function cleanupTgaFiles(folder) {
@@ -1588,7 +1573,7 @@ async function recordAllHighlights(options) {
   return recordedClips;
 }
 
-module.exports = {
+export {
   recordHighlight,
   recordAllHighlights,
   postprocessClip,

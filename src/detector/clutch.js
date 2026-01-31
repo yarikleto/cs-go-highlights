@@ -9,8 +9,8 @@
  * Example: 1v3 clutch = player alone vs 3 enemies, wins the round
  */
 
-const { PRIORITIES, CLUTCH_POINTS_MULTIPLIER } = require('./constants');
-const { createClutchHighlight } = require('./highlightFactory');
+import { PRIORITIES, CLUTCH_POINTS_MULTIPLIER } from './constants.js';
+import { createClutchHighlight } from './highlightFactory.js';
 
 /**
  * Detect clutch situations from round data
@@ -129,6 +129,6 @@ function buildClutchHighlight(round, priorities) {
   });
 }
 
-module.exports = {
+export {
   detectClutches,
 };

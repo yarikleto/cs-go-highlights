@@ -161,7 +161,7 @@ function mergeConfig(defaults, overrides) {
   return result;
 }
 
-module.exports = {
+export {
   DEFAULT_CONFIG,
   HIGHLIGHT_TYPES,
   mergeConfig,

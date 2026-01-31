@@ -21,4 +21,4 @@
 
 // Re-export everything from the modular implementation
 // This preserves the original API for existing consumers
-module.exports = require('./detector/index');
+export * from './detector/index.js';

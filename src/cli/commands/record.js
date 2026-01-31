@@ -5,11 +5,11 @@
  * Produces raw clips without post-processing effects.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { recordAllHighlights } = require('../../recorder');
-const { cleanupTempFiles } = require('../../merger');
-const { validateFileExists, validateDirExists, ensureDir, parseJsonFile } = require('../validators');
+import path from 'path';
+import fs from 'fs';
+import { recordAllHighlights } from '../../recorder.js';
+import { cleanupTempFiles } from '../../merger.js';
+import { validateFileExists, validateDirExists, ensureDir, parseJsonFile } from '../validators.js';
 
 /**
  * Main record command handler
@@ -141,4 +141,4 @@ function printRecordCompletion(clipCount, outputPath, highlightsPath) {
   console.log(`  2. Merge clips: node src/index.js merge --clips "${clipsDir}"`);
 }
 
-module.exports = { recordCommand };
+export { recordCommand };

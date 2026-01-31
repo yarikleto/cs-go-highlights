@@ -1,6 +1,7 @@
 {
   "name": "csgo-highlights",
   "version": "1.0.0",
+  "type": "module",
   "description": "CLI tool to detect highlights from CS:GO demo files",
   "main": "src/index.js",
   "bin": {

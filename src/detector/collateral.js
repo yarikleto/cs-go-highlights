@@ -8,9 +8,9 @@
  * Collaterals are identified by same attacker + same tick for 2+ kills.
  */
 
-const { KILL_POINTS, PRIORITIES } = require('./constants');
-const { groupBy, calculateTotalPoints } = require('./utils');
-const { createCollateralHighlight } = require('./highlightFactory');
+import { KILL_POINTS, PRIORITIES } from './constants.js';
+import { groupBy, calculateTotalPoints } from './utils.js';
+import { createCollateralHighlight } from './highlightFactory.js';
 
 /**
  * Detect collateral kills from all kills in demo
@@ -91,6 +91,6 @@ function buildCollateralHighlight(tickKills, killPoints, priorities) {
   });
 }
 
-module.exports = {
+export {
   detectCollaterals,
 };

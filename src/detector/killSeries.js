@@ -10,9 +10,9 @@
  * - 2+ headshots with special weapons (deagle/sniper/shotgun = skill)
  */
 
-const { KILL_POINTS, PRIORITIES } = require('./constants');
-const { groupBy, calculateTotalPoints } = require('./utils');
-const { createKillSeriesHighlight } = require('./highlightFactory');
+import { KILL_POINTS, PRIORITIES } from './constants.js';
+import { groupBy, calculateTotalPoints } from './utils.js';
+import { createKillSeriesHighlight } from './highlightFactory.js';
 
 /**
  * Detect kill series from all kills in demo
@@ -233,7 +233,7 @@ function getKnifeKillsInSeries(kills, seriesHighlights) {
   return knifeKillsInSeries;
 }
 
-module.exports = {
+export {
   detectKillSeries,
   getKnifeKillsInSeries,
 };

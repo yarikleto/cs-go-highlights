@@ -5,10 +5,10 @@
  * Shows detailed kill timeline with gaps between kills.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { validateFileExists } = require('../validators');
-const { formatTime } = require('../utils/time');
+import path from 'path';
+import fs from 'fs';
+import { validateFileExists } from '../validators.js';
+import { formatTime } from '../utils/time.js';
 
 /**
  * Main player-kills command handler
@@ -22,7 +22,7 @@ async function playerKillsCommand(options) {
   printHeader(demoPath, targetSteamId);
   
   try {
-    const { DemoFile } = require('demofile');
+    const { DemoFile } = await import('demofile');
     const buffer = fs.readFileSync(demoPath);
     const demo = new DemoFile();
     
@@ -176,4 +176,4 @@ function printKillsTable(result) {
   console.log('');
 }
 
-module.exports = { playerKillsCommand };
+export { playerKillsCommand };

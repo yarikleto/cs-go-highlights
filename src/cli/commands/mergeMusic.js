@@ -5,12 +5,12 @@
  * Useful for creating continuous background music from shorter tracks.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { execSync } = require('child_process');
-const { validateDirExists } = require('../validators');
-const { getMediaDuration } = require('../utils/ffmpeg');
-const { formatTime } = require('../utils/time');
+import path from 'path';
+import fs from 'fs';
+import { execSync } from 'child_process';
+import { validateDirExists } from '../validators.js';
+import { getMediaDuration } from '../utils/ffmpeg.js';
+import { formatTime } from '../utils/time.js';
 
 // Supported audio formats
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
@@ -178,4 +178,4 @@ function printMergeResults(outputPath, totalExpected) {
   }
 }
 
-module.exports = { mergeMusicCommand };
+export { mergeMusicCommand };

@@ -8,9 +8,9 @@
  * to avoid duplicate highlights.
  */
 
-const { KILL_POINTS, PRIORITIES } = require('./constants');
-const { calculateKillPoints, getPlayerId } = require('./utils');
-const { createKnifeHighlight } = require('./highlightFactory');
+import { KILL_POINTS, PRIORITIES } from './constants.js';
+import { calculateKillPoints, getPlayerId } from './utils.js';
+import { createKnifeHighlight } from './highlightFactory.js';
 
 /**
  * Detect standalone knife kills
@@ -81,6 +81,6 @@ function buildKnifeHighlight(kill, killPoints, priorities) {
   });
 }
 
-module.exports = {
+export {
   detectKnifeKills,
 };

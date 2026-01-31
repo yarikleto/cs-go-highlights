@@ -7,8 +7,8 @@
  * Pattern: Each validator either succeeds silently or exits with error message.
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Validate that a file exists
@@ -163,7 +163,7 @@ function extractHighlightId(filename) {
   return match ? match[1] : null;
 }
 
-module.exports = {
+export {
   validateFileExists,
   validateDirExists,
   ensureDir,

@@ -12,12 +12,12 @@
  * 4. Clutches (independent, uses round data)
  */
 
-const { KILL_POINTS, PRIORITIES, HIGHLIGHT_TYPES } = require('./constants');
-const { calculateKillPoints } = require('./utils');
-const { detectKillSeries, getKnifeKillsInSeries } = require('./killSeries');
-const { detectCollaterals } = require('./collateral');
-const { detectKnifeKills } = require('./knife');
-const { detectClutches } = require('./clutch');
+import { KILL_POINTS, PRIORITIES, HIGHLIGHT_TYPES } from './constants.js';
+import { calculateKillPoints } from './utils.js';
+import { detectKillSeries, getKnifeKillsInSeries } from './killSeries.js';
+import { detectCollaterals } from './collateral.js';
+import { detectKnifeKills } from './knife.js';
+import { detectClutches } from './clutch.js';
 
 /**
  * Detect all highlights from parsed demo data
@@ -109,7 +109,7 @@ function extractDetectionConfig(config) {
 }
 
 // Re-export individual detectors for advanced usage and testing
-module.exports = {
+export {
   // Main API
   detectHighlights,
   

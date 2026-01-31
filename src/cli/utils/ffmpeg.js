@@ -5,7 +5,7 @@
  * These utilities handle progress reporting and error handling.
  */
 
-const { spawn, execSync } = require('child_process');
+import { spawn, execSync } from 'child_process';
 
 /**
  * Run FFmpeg compression with CRF (Constant Rate Factor)
@@ -101,7 +101,7 @@ function powerToCrf(power) {
   return 18 + Math.round((power - 1) * (36 - 18) / 9);
 }
 
-module.exports = {
+export {
   runFfmpegCompress,
   getMediaDuration,
   powerToCrf,

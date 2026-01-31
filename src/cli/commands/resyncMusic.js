@@ -5,10 +5,10 @@
  * run this command to recalculate startTime/endTime values.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { loadMusicMapping, saveMusicMapping, resyncMusicMapping } = require('../../music');
-const { validateFileExists } = require('../validators');
+import path from 'path';
+import fs from 'fs';
+import { loadMusicMapping, saveMusicMapping, resyncMusicMapping } from '../../music.js';
+import { validateFileExists } from '../validators.js';
 
 /**
  * Main resync-music command handler
@@ -101,4 +101,4 @@ function printUpdatedTimes(mapping) {
   }
 }
 
-module.exports = { resyncMusicCommand };
+export { resyncMusicCommand };

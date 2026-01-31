@@ -140,7 +140,7 @@ function resolveCollisions(highlights) {
   });
 }
 
-module.exports = {
+export {
   resolveCollisions,
   compareHighlights,
   getTickRange,

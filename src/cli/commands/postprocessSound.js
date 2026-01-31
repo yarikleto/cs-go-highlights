@@ -9,12 +9,12 @@
  * Separate from UI postprocess to allow fast music iteration.
  */
 
-const path = require('path');
-const fs = require('fs');
-const { applyMusicToVideo } = require('../../recorder');
-const { loadMusicMapping } = require('../../music');
-const { DEFAULT_CONFIG } = require('../config');
-const { 
+import path from 'path';
+import fs from 'fs';
+import { applyMusicToVideo } from '../../recorder.js';
+import { loadMusicMapping } from '../../music.js';
+import { DEFAULT_CONFIG } from '../config.js';
+import { 
   validateFileExists, 
   validateDirExists, 
   ensureDir, 
@@ -22,7 +22,7 @@ const {
   buildHighlightMap,
   sortClipFiles,
   extractHighlightId,
-} = require('../validators');
+} from '../validators.js';
 
 /**
  * Main postprocess-sound command handler
@@ -276,4 +276,4 @@ function printCompletion(processed, skipped, outputPath, statusPath, clipsPath) 
   console.log(`  node src/index.js merge --clips "${outputPath}"`);
 }
 
-module.exports = { postprocessSoundCommand };
+export { postprocessSoundCommand };

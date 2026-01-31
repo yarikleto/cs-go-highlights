@@ -1,6 +1,6 @@
-const { spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Merges multiple video clips into a single video using FFmpeg
@@ -357,7 +357,7 @@ function formatDuration(seconds) {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-module.exports = {
+export {
   mergeClips,
   cleanupTempFiles,
   getVideoDuration,
