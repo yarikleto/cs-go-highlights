@@ -11,9 +11,7 @@ import { execSync } from 'child_process';
 import { validateDirExists } from '../validators.js';
 import { getMediaDuration } from '../utils/ffmpeg.js';
 import { formatTime } from '../utils/time.js';
-
-// Supported audio formats
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
+import { AUDIO_EXTENSIONS } from '../../config.js';
 
 /**
  * Main merge-music command handler

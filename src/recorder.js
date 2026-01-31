@@ -4,6 +4,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { parseTime } from './music.js';
+import {
+  RECORDING,
+  ENCODING,
+  TIMING,
+  SLOWMO,
+  VISUAL_EFFECTS,
+  MUSIC,
+} from './config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -78,14 +86,13 @@ function setupSignalHandlers() {
 // Initialize signal handlers
 setupSignalHandlers();
 
-// Default recording settings (high quality encoding at 1080p)
+// Default recording settings (uses centralized config)
 const DEFAULT_SETTINGS = {
-  width: 1920,
-  height: 1080,
-  framerate: 60,
-  // FFmpeg encoding settings (high quality)
-  crf: 15,           // Lower = higher quality (0-51, 15 is very high quality)
-  preset: 'slow',    // Slower = better compression/quality (ultrafast, fast, medium, slow, veryslow)
+  width: RECORDING.width,
+  height: RECORDING.height,
+  framerate: RECORDING.framerate,
+  crf: RECORDING.crf,
+  preset: RECORDING.preset,
 };
 
 /**

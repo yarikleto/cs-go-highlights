@@ -6,6 +6,7 @@
  */
 
 import { spawn, execSync } from 'child_process';
+import { ENCODING } from '../../config.js';
 
 /**
  * Run FFmpeg compression with CRF (Constant Rate Factor)
@@ -28,9 +29,9 @@ function runFfmpegCompress(inputPath, outputPath, crf) {
       '-i', inputPath,
       '-c:v', 'libx264',
       '-crf', crf.toString(),
-      '-preset', 'medium',  // Balance between speed and compression
+      '-preset', ENCODING.preset.postprocess,
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', ENCODING.audioBitrate.low,
       '-y',  // Overwrite output file
       outputPath,
     ];
@@ -90,15 +91,16 @@ function getMediaDuration(filePath) {
 }
 
 /**
- * Map compression power level (1-10) to CRF value (18-36)
+ * Map compression power level (1-10) to CRF value
  * 
  * @param {number} power - Compression power (1 = light, 10 = maximum)
  * @returns {number} CRF value for FFmpeg
  */
 function powerToCrf(power) {
-  // Power 1 = CRF 18 (minimal compression, high quality)
-  // Power 10 = CRF 36 (maximum compression, lower quality)
-  return 18 + Math.round((power - 1) * (36 - 18) / 9);
+  // Power 1 = CRF min (minimal compression, high quality)
+  // Power 10 = CRF max (maximum compression, lower quality)
+  const { min, max } = ENCODING.crf;
+  return min + Math.round((power - 1) * (max - min) / 9);
 }
 
 export {

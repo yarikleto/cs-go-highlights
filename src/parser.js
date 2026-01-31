@@ -1,29 +1,14 @@
 import fs from 'fs';
 import { DemoFile } from 'demofile';
-
-// Weapon categories for point calculation
-const PISTOL_WEAPONS = [
-  'glock', 'usp_silencer', 'hkp2000', 'p250', 'tec9', 'fiveseven',
-  'cz75a', 'deagle', 'revolver', 'elite',
-];
-
-const SNIPER_WEAPONS = [
-  'awp', 'ssg08', 'g3sg1', 'scar20',
-];
-
-const SHOTGUN_WEAPONS = [
-  'nova', 'xm1014', 'mag7', 'sawedoff',
-];
-
-// Weapons where headshot series (2+ kills) is impressive enough to be a highlight
-const HEADSHOT_SERIES_WEAPONS = [
-  ...SNIPER_WEAPONS,
-  ...SHOTGUN_WEAPONS,
-  'deagle',  // Desert Eagle
-  'revolver', // R8 Revolver
-];
-
-// Everything else that's not pistol/sniper/shotgun/knife is considered rifle
+import {
+  PISTOL_WEAPONS,
+  SNIPER_WEAPONS,
+  SHOTGUN_WEAPONS,
+  HEADSHOT_SERIES_WEAPONS,
+  KNIFE_WEAPONS,
+  TIMING,
+  DETECTION,
+} from './config.js';
 
 /**
  * Get weapon category: 'pistol', 'sniper', 'shotgun', 'rifle', or 'knife'
@@ -61,31 +46,6 @@ function isHeadshotSeriesWeapon(weapon) {
   return HEADSHOT_SERIES_WEAPONS.includes(normalized);
 }
 
-// Knife weapon names in CS:GO
-const KNIFE_WEAPONS = [
-  'knife',
-  'knife_t',
-  'knife_ct',
-  'bayonet',
-  'knife_flip',
-  'knife_gut',
-  'knife_karambit',
-  'knife_m9_bayonet',
-  'knife_tactical',
-  'knife_falchion',
-  'knife_survival_bowie',
-  'knife_butterfly',
-  'knife_push',
-  'knife_cord',
-  'knife_canis',
-  'knife_ursus',
-  'knife_gypsy_jackknife',
-  'knife_outdoor',
-  'knife_stiletto',
-  'knife_widowmaker',
-  'knife_skeleton',
-];
-
 /**
  * Check if a weapon is a knife
  * @param {string} weapon - Weapon name
@@ -110,7 +70,7 @@ function parseDemo(filePath) {
     const kills = [];
     const rounds = [];
     let currentRound = null;
-    let tickRate = 64; // Default, will be calculated from header
+    let tickRate = TIMING.fallbackTickRate; // Default, will be calculated from header
     let matchStarted = false;
     let isWarmup = true;
 
@@ -208,8 +168,8 @@ function parseDemo(filePath) {
       const shots = recentShotsByPlayer.get(steamId);
       shots.push(currentTick);
       
-      // Keep only shots from last ~15 seconds (to avoid memory issues)
-      const maxAge = tickRate * 15;
+      // Keep only shots from last N seconds (to avoid memory issues)
+      const maxAge = tickRate * DETECTION.maxShotAge;
       while (shots.length > 0 && shots[0] < currentTick - maxAge) {
         shots.shift();
       }
@@ -244,7 +204,7 @@ function parseDemo(filePath) {
       if (attackerSteamId && recentShotsByPlayer.has(attackerSteamId)) {
         const shots = recentShotsByPlayer.get(attackerSteamId);
         const currentTick = demoFile.currentTick;
-        const maxLookback = tickRate * 3; // Only look back 3 seconds (direct engagement)
+        const maxLookback = tickRate * DETECTION.maxLookback; // Only look back N seconds (direct engagement)
         
         // Find the earliest shot within the short window
         for (let i = shots.length - 1; i >= 0; i--) {

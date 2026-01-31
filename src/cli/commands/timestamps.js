@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { parseJsonFile } from '../validators.js';
-import { DEFAULT_CONFIG } from '../config.js';
+import { DETECTION } from '../../config.js';
 
 /**
  * Extract map name from demo filename
@@ -108,7 +108,7 @@ function formatHighlightType(highlight) {
   switch (type) {
     case 'kill-series': {
       const killCount = highlight.killCount || highlight.kills?.length || 0;
-      if (killCount === 5) return 'ACE';
+      if (killCount >= DETECTION.aceKillCount) return 'ACE';
       return `${killCount}K`;
     }
     case 'clutch': {
@@ -132,8 +132,8 @@ function formatHighlightType(highlight) {
 async function timestampsCommand(options) {
   const highlightsPath = path.resolve(options.highlights);
   const outputPath = path.resolve(options.output);
-  const speedupMultiplier = options.speedup || DEFAULT_CONFIG.postprocess.speedupMultiplier;
-  const slowmoFactor = options.slowmo || DEFAULT_CONFIG.postprocess.slowmoFactor;
+  const speedupMultiplier = options.speedup;
+  const slowmoFactor = options.slowmo;
 
   console.log('\n=== Generate Timestamps ===\n');
   console.log(`Highlights: ${highlightsPath}`);

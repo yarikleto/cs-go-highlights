@@ -41,6 +41,13 @@ import {
   mergeMusicCommand,
   timestampsCommand,
 } from './commands/index.js';
+import {
+  PATHS,
+  SPEEDUP,
+  SLOWMO,
+  MUSIC,
+  ENCODING,
+} from '../config.js';
 
 // CLI metadata
 program
@@ -58,7 +65,7 @@ program
   .command('analyze')
   .description('Analyze demo files and detect highlights')
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
-  .option('--output <path>', 'Output folder for highlights.json', './output')
+  .option('--output <path>', 'Output folder for highlights.json', PATHS.output)
   .option('--reset-music', 'Reset music mapping (discard existing offsets)')
   .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
   .action(analyzeCommand);
@@ -70,7 +77,7 @@ program
   .requiredOption('--demos <path>', 'Path to folder with .dem files')
   .requiredOption('--hlae <path>', 'Path to HLAE executable (hlae.exe)')
   .requiredOption('--csgo <path>', 'Path to CS:GO installation folder')
-  .option('--output <path>', 'Output folder for clips', './output')
+  .option('--output <path>', 'Output folder for clips', PATHS.output)
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
   .option('--voice-chat', 'Enable voice chat and text chat in recordings')
@@ -80,11 +87,11 @@ program
   .command('postprocess-ui')
   .description('Apply visual effects to recorded clips (slowmo, speedup, overlay)')
   .requiredOption('--highlights <path>', 'Path to highlights.json file')
-  .option('--clips <path>', 'Path to folder containing raw clips', './output/clips')
-  .option('--output <path>', 'Output folder for processed clips (default: ./output/clips_processed)')
-  .option('--speedup <multiplier>', 'Speed up clutch gaps (e.g., 4 for 4x speed)', parseFloat)
-  .option('--overlay', 'Show player name and highlight type overlay (fade in/out)')
-  .option('--slowmo <factor>', 'Slow motion on last kill if headshot/noscope (e.g., 0.5 for half speed)', parseFloat)
+  .option('--clips <path>', 'Path to folder containing raw clips', PATHS.clips)
+  .option('--output <path>', 'Output folder for processed clips', PATHS.clipsProcessed)
+  .option('--speedup <multiplier>', `Speed up clutch gaps (default: ${SPEEDUP.defaultMultiplier}x)`, parseFloat, SPEEDUP.defaultMultiplier)
+  .option('--overlay', 'Show player name and highlight type overlay (fade in/out)', true)
+  .option('--slowmo <factor>', `Slow motion on last kill if headshot/noscope (default: ${SLOWMO.defaultFactor})`, parseFloat, SLOWMO.defaultFactor)
   .option('--force', 'Re-process all clips even if already processed')
   .option('--id <highlightId>', 'Process only a specific highlight by ID')
   .action(postprocessUICommand);
@@ -93,10 +100,10 @@ program
   .command('postprocess-sound')
   .description('Apply music to processed clips (separate step for fast music fine-tuning)')
   .requiredOption('--highlights <path>', 'Path to highlights.json file')
-  .option('--clips <path>', 'Path to processed clips folder', './output/clips_processed')
-  .option('--output <path>', 'Output folder for clips with music (default: ./output/clips_final)')
-  .option('--music <folder>', 'Path to music folder (default: ./music)')
-  .option('--music-volume <percent>', 'Music volume 0-100 (default: 70)', parseFloat)
+  .option('--clips <path>', 'Path to processed clips folder', PATHS.clipsProcessed)
+  .option('--output <path>', 'Output folder for clips with music', PATHS.clipsFinal)
+  .option('--music <folder>', 'Path to music folder', MUSIC.defaultFolder)
+  .option('--music-volume <percent>', `Music volume 0-100 (default: ${MUSIC.defaultMusicVolumePercent})`, parseFloat, MUSIC.defaultMusicVolumePercent)
   .option('--force', 'Re-apply music even if already applied')
   .option('--id <highlightId>', 'Apply music only to a specific highlight by ID')
   .action(postprocessSoundCommand);
@@ -105,7 +112,7 @@ program
   .command('merge')
   .description('Merge recorded clips into a single video using FFmpeg')
   .requiredOption('--clips <path>', 'Path to folder containing clip files (.mp4)')
-  .option('--output <path>', 'Output path for final video', './output/highlights_final.mp4')
+  .option('--output <path>', 'Output path for final video', PATHS.highlightsFinal)
   .option('--cleanup', 'Delete individual clips after merging')
   .option('--transition <duration>', 'Add fade in/out transitions (duration in seconds)', parseFloat)
   .action(mergeCommand);
@@ -120,7 +127,7 @@ program
   .command('compress')
   .description('Compress a video file to reduce file size')
   .requiredOption('--input <path>', 'Path to input video file')
-  .option('--power <level>', 'Compression power 1-10 (1=light, 10=maximum)', '5')
+  .option('--power <level>', `Compression power 1-10 (1=light, 10=maximum)`, parseInt, ENCODING.defaultCompressionPower)
   .option('--output <path>', 'Output path for compressed video')
   .action(compressCommand);
 
@@ -134,23 +141,23 @@ program
 program
   .command('merge-music')
   .description('Merge all songs in music folder into one file')
-  .option('--music <folder>', 'Path to music folder', './music')
+  .option('--music <folder>', 'Path to music folder', MUSIC.defaultFolder)
   .option('--output <path>', 'Output path for merged song (default: named after first song)')
   .action(mergeMusicCommand);
 
 program
   .command('resync-music')
   .description('Recalculate music startTime/endTime based on manual offset values in music-mapping.json')
-  .option('--mapping <path>', 'Path to music-mapping.json', './output/music-mapping.json')
+  .option('--mapping <path>', 'Path to music-mapping.json', PATHS.musicMapping)
   .action(resyncMusicCommand);
 
 program
   .command('timestamps')
   .description('Generate a list of highlight timestamps (after speedup/slowmo) with type, map, and player')
   .requiredOption('--highlights <path>', 'Path to highlights.json file')
-  .option('--output <path>', 'Output file path for timestamps', './output/timestamps.txt')
-  .option('--speedup <multiplier>', 'Speedup multiplier used in postprocess (default: 3)', parseFloat)
-  .option('--slowmo <factor>', 'Slowmo factor used in postprocess (default: 0.6)', parseFloat)
+  .option('--output <path>', 'Output file path for timestamps', PATHS.timestamps)
+  .option('--speedup <multiplier>', `Speedup multiplier used in postprocess (default: ${SPEEDUP.defaultMultiplier})`, parseFloat, SPEEDUP.defaultMultiplier)
+  .option('--slowmo <factor>', `Slowmo factor used in postprocess (default: ${SLOWMO.defaultFactor})`, parseFloat, SLOWMO.defaultFactor)
   .action(timestampsCommand);
 
 // Parse CLI arguments

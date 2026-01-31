@@ -1,9 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-
-// Supported audio formats
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac'];
+import { AUDIO_EXTENSIONS } from './config.js';
 
 /**
  * Get audio duration using ffprobe
