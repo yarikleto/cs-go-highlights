@@ -60,13 +60,20 @@ node src/index.js analyze --demos ./my-demos --output ./results
 Records all highlights using HLAE (Half-Life Advanced Effects). Produces **raw video clips without effects**.
 
 ```bash
-node src/index.js record --highlights <path> --demos <path> --hlae <path> --csgo <path> [options]
+node src/index.js record [options]
 ```
 
-**Quick example** (copy and edit paths):
+**Quick example** (uses defaults for standard Windows paths):
 
 ```bash
-node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae "C:\Program Files (x86)\HLAE\HLAE.exe" --csgo "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
+# Simple - uses all defaults
+node src/index.js record
+
+# Fast preview quality
+node src/index.js record --quality draft
+
+# Custom paths (if HLAE/CS:GO not in default locations)
+node src/index.js record --hlae "D:\HLAE\hlae.exe" --csgo "D:\Games\CS-GO"
 ```
 
 #### Prerequisites
@@ -87,14 +94,34 @@ node src/index.js record --highlights ./output/highlights.json --demos ./demos -
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--highlights <path>` | Yes | - | Path to `highlights.json` file |
-| `--demos <path>` | Yes | - | Path to folder containing `.dem` files |
-| `--hlae <path>` | Yes | - | Path to HLAE executable (`hlae.exe`) |
-| `--csgo <path>` | Yes | - | Path to CS:GO installation folder |
+| `--highlights <path>` | No | `./output/highlights.json` | Path to `highlights.json` file |
+| `--demos <path>` | No | `./demos` | Path to folder containing `.dem` files |
+| `--hlae <path>` | No | `C:\Program Files (x86)\HLAE\hlae.exe` | Path to HLAE executable |
+| `--csgo <path>` | No | `C:\Program Files (x86)\Steam\...` | Path to CS:GO installation folder |
 | `--output <path>` | No | `./output` | Output folder for clips |
+| `--quality <preset>` | No | `medium` | Encoding quality preset (see below) |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
-| `--voice-chat` | No | - | Enable voice chat, radio commands, and text chat in recordings (shows full HUD) |
+| `--voice-chat` | No | - | Enable voice chat and text chat in recordings |
+
+#### Quality Presets
+
+Control the trade-off between encoding speed and video quality:
+
+| Preset | CRF | FFmpeg Preset | Description |
+|--------|-----|---------------|-------------|
+| `high` | 15 | slow | Best quality, ~3x slower encoding |
+| `medium` | 18 | medium | Good quality, balanced speed (default) |
+| `fast` | 20 | fast | Decent quality, fast encoding |
+| `draft` | 23 | ultrafast | Preview quality, very fast |
+
+```bash
+# Fast recording for preview
+node src/index.js record --quality draft
+
+# High quality for final export
+node src/index.js record --quality high
+```
 
 **Note about `--voice-chat`**: This flag enables voice and text chat from both teams, but due to CS:GO limitations, it also shows the full spectator HUD (player panels, radar, etc.). There is no way to show only chat without the rest of the HUD in demo playback mode.
 
@@ -626,21 +653,22 @@ Each line contains:
 Selects the top N highlights by "impressiveness" score. Useful for creating highlight compilations from large datasets.
 
 ```bash
-node src/index.js top --highlights <path> [--count <n>] [--output <path>] [options]
+node src/index.js top [--highlights <path>] [--count <n>] [--output <path>] [options]
 ```
 
 #### Options
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--highlights <path>` | Yes | - | Path to `highlights.json` file |
+| `--highlights <path>` | No | `./output/highlights.json` | Path to `highlights.json` file |
 | `--count <n>` | No | `10` | Number of top highlights to select |
 | `--output <path>` | No | `./output/highlights_top.json` | Output file path |
+| `--asc` | No | - | Sort ascending (lowest score first, default: descending) |
 | `--show-scores` | No | - | Print detailed score breakdown to console |
 | `--player <steamId>` | No | - | Filter by player Steam ID |
 | `--type <type>` | No | - | Filter by highlight type (kill-series, clutch, etc.) |
 | `--min-kills <n>` | No | - | Minimum kill count |
-| `--unique-players <n>` | No | - | Max highlights per player (for variety) |
+| `--unique-players <n>` | No | `1` | Max highlights per player (for variety) |
 
 #### Scoring Algorithm
 
@@ -663,28 +691,34 @@ Score = Base + Type + KillCount + Intensity + Style + Weapon + Duration + Slowmo
 
 #### Examples
 
-Get top 10 highlights:
+Get top 10 highlights (uses defaults):
 
 ```bash
-node src/index.js top --highlights ./output/highlights.json
+node src/index.js top
 ```
 
 Get top 20 with detailed score breakdown:
 
 ```bash
-node src/index.js top --highlights ./output/highlights.json --count 20 --show-scores
+node src/index.js top --count 20 --show-scores
 ```
 
-Ensure variety (max 2 highlights per player):
+Sort ascending (lowest scores first):
 
 ```bash
-node src/index.js top --highlights ./output/highlights.json --unique-players 2
+node src/index.js top --count 10 --asc
+```
+
+Allow multiple highlights per player:
+
+```bash
+node src/index.js top --unique-players 3
 ```
 
 Filter by type:
 
 ```bash
-node src/index.js top --highlights ./output/highlights.json --type kill-series --min-kills 4
+node src/index.js top --type kill-series --min-kills 4
 ```
 
 #### Output Format
@@ -696,10 +730,15 @@ The output file uses a simplified format compatible with other commands:
   "generatedAt": "2026-01-31T...",
   "sourceFile": "highlights.json",
   "topCount": 10,
-  "filters": { "uniquePlayers": 2 },
+  "filters": { "uniquePlayers": 1 },
+  "summary": {
+    "totalHighlights": 10,
+    "totalDurationSeconds": 245.5,
+    "byType": { "kill-series": 7, "clutch": 2, "one-tap": 1 }
+  },
   "highlights": [
     {
-      "_rank": 1,
+      "rank": 1,
       "_score": { "total": 83.3, "base": 11, "typeBonus": 15, ... },
       "id": "...",
       "type": "kill-series",

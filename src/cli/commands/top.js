@@ -65,7 +65,7 @@ async function topCommand(options) {
     _score: calculateScore(h),
   }));
   
-  // Sort by total score descending
+  // Always sort by score descending to select the BEST highlights
   scored.sort((a, b) => b._score.total - a._score.total);
   
   // Apply unique-players limit if specified
@@ -77,16 +77,24 @@ async function topCommand(options) {
   // Take top N
   topHighlights = topHighlights.slice(0, count);
   
-  // Add rank
+  // Add rank (always #1 = best score)
   topHighlights = topHighlights.map((h, i) => ({
-    _rank: i + 1,
+    rank: i + 1,
     ...h,
   }));
+  
+  // Reverse display order if --asc (show worst of selected first)
+  if (options.asc) {
+    topHighlights = topHighlights.reverse();
+  }
   
   // Print score breakdown if requested
   if (showScores) {
     printScoreBreakdown(topHighlights);
   }
+  
+  // Calculate summary statistics
+  const summary = calculateSummary(topHighlights);
   
   // Build output (simple flat format, compatible with other commands)
   const output = {
@@ -94,6 +102,7 @@ async function topCommand(options) {
     sourceFile: path.basename(highlightsPath),
     topCount: topHighlights.length,
     filters: buildFiltersInfo(options),
+    summary,
     highlights: topHighlights,
   };
   
@@ -384,7 +393,7 @@ function printScoreBreakdown(highlights) {
   
   for (const h of highlights) {
     const s = h._score;
-    console.log(`#${h._rank} [${s.total}] ${h.player?.name} - ${formatType(h)}`);
+    console.log(`#${h.rank} [${s.total}] ${h.player?.name} - ${formatType(h)}`);
     console.log(`   Base:${s.base} Type:+${s.typeBonus} Kills:+${s.killCountBonus} ` +
                 `Int:+${s.intensityBonus.toFixed(1)} Style:+${s.styleBonus} ` +
                 `Wpn:+${s.weaponBonus} Dur:+${s.durationBonus.toFixed(1)} Slow:+${s.slowmoBonus}`);
@@ -416,25 +425,54 @@ function formatType(highlight) {
 /**
  * Print summary of top highlights
  */
+/**
+ * Calculate summary statistics for highlights
+ */
+function calculateSummary(highlights) {
+  const byType = {};
+  let totalDurationSeconds = 0;
+  
+  for (const h of highlights) {
+    byType[h.type] = (byType[h.type] || 0) + 1;
+    totalDurationSeconds += h.playback?.durationSeconds || h.durationSeconds || 0;
+  }
+  
+  return {
+    totalHighlights: highlights.length,
+    totalDurationSeconds: Math.round(totalDurationSeconds * 100) / 100,
+    byType,
+  };
+}
+
+/**
+ * Format duration in seconds to human-readable string
+ */
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
 function printSummary(highlights) {
   console.log('\n=== TOP HIGHLIGHTS ===\n');
   
   for (const h of highlights) {
     const map = extractMapName(h.demoFile);
-    console.log(`#${h._rank} [${h._score.total}] ${h.player?.name} - ${formatType(h)} (${map})`);
+    console.log(`#${h.rank} [${h._score.total}] ${h.player?.name} - ${formatType(h)} (${map})`);
   }
   
-  // Stats
-  const byType = {};
-  const byPlayer = {};
+  // Calculate stats
+  const summary = calculateSummary(highlights);
   
+  // By player
+  const byPlayer = {};
   for (const h of highlights) {
-    byType[h.type] = (byType[h.type] || 0) + 1;
     const player = h.player?.name || 'unknown';
     byPlayer[player] = (byPlayer[player] || 0) + 1;
   }
   
-  console.log('\nBy type:', byType);
+  console.log(`\nTotal duration: ${formatDuration(summary.totalDurationSeconds)}`);
+  console.log('By type:', summary.byType);
   console.log('By player:', byPlayer);
 }
 

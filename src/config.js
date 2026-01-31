@@ -26,6 +26,7 @@ export const PATHS = Object.freeze({
   output: './output',
   demos: './demos',
   highlights: './output/highlights.json',
+  highlightsTop: './output/highlights_top.json',
   clips: './output/clips',
   clipsProcessed: './output/clips_processed',
   clipsFinal: './output/clips_final',
@@ -35,6 +36,14 @@ export const PATHS = Object.freeze({
   // External tools (Windows default paths)
   hlae: 'C:\\Program Files (x86)\\HLAE\\hlae.exe',
   csgo: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive',
+});
+
+/**
+ * Default settings for the `top` command
+ */
+export const TOP_COMMAND = Object.freeze({
+  count: 10,                // Default number of top highlights to select
+  uniquePlayers: 1,         // Max highlights per player (1 = one per player for variety)
 });
 
 // =============================================================================
@@ -65,9 +74,34 @@ export const RECORDING = Object.freeze({
   width: 1920,
   height: 1080,
   framerate: 60,
-  // FFmpeg encoding (high quality for raw clips)
-  crf: 15,           // Lower = higher quality (0-51, 15 is very high)
-  preset: 'slow',    // Slower = better compression (ultrafast, fast, medium, slow, veryslow)
+});
+
+/**
+ * Recording quality presets
+ * Trade-off between quality and encoding speed
+ */
+export const RECORDING_QUALITY = Object.freeze({
+  high: {
+    crf: 15,
+    preset: 'slow',
+    description: 'Best quality, slow encoding (~3x longer)',
+  },
+  medium: {
+    crf: 18,
+    preset: 'medium',
+    description: 'Good quality, balanced speed (default)',
+  },
+  fast: {
+    crf: 20,
+    preset: 'fast',
+    description: 'Decent quality, fast encoding',
+  },
+  draft: {
+    crf: 23,
+    preset: 'ultrafast',
+    description: 'Preview quality, very fast',
+  },
+  default: 'medium',
 });
 
 // =============================================================================

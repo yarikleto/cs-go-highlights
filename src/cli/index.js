@@ -50,6 +50,8 @@ import {
   MUSIC,
   ENCODING,
   MERGE,
+  RECORDING_QUALITY,
+  TOP_COMMAND,
 } from '../config.js';
 
 // CLI metadata
@@ -81,6 +83,7 @@ program
   .option('--hlae <path>', 'Path to HLAE executable (hlae.exe)', PATHS.hlae)
   .option('--csgo <path>', 'Path to CS:GO installation folder', PATHS.csgo)
   .option('--output <path>', 'Output folder for clips', PATHS.output)
+  .option('--quality <preset>', 'Encoding quality: high, medium, fast, draft', RECORDING_QUALITY.default)
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
   .option('--voice-chat', 'Enable voice chat and text chat in recordings')
@@ -168,13 +171,14 @@ program
   .command('top')
   .description('Select top N highlights by impressiveness score')
   .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--count <n>', 'Number of top highlights to select', parseInt, 10)
-  .option('--output <path>', 'Output file path for top highlights', './output/highlights_top.json')
+  .option('--count <n>', 'Number of top highlights to select', parseInt, TOP_COMMAND.count)
+  .option('--output <path>', 'Output file path for top highlights', PATHS.highlightsTop)
+  .option('--asc', 'Sort ascending (lowest score first, default: descending)')
   .option('--show-scores', 'Print detailed score breakdown to console')
   .option('--player <steamId>', 'Filter by player Steam ID')
   .option('--type <type>', 'Filter by highlight type (kill-series, clutch, etc.)')
   .option('--min-kills <n>', 'Minimum kill count', parseInt)
-  .option('--unique-players <n>', 'Max highlights per player (for variety)', parseInt)
+  .option('--unique-players <n>', 'Max highlights per player (for variety)', parseInt, TOP_COMMAND.uniquePlayers)
   .action(topCommand);
 
 // Parse CLI arguments

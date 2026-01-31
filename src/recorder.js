@@ -92,8 +92,6 @@ const DEFAULT_SETTINGS = {
   width: RECORDING.width,
   height: RECORDING.height,
   framerate: RECORDING.framerate,
-  crf: RECORDING.crf,
-  preset: RECORDING.preset,
 };
 
 /**
@@ -108,7 +106,7 @@ const DEFAULT_SETTINGS = {
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, voiceChat } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, quality, voiceChat } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -211,15 +209,17 @@ async function recordHighlight(options) {
     cleanupTempFiles();
   }
   
-  // Encode TGA sequence to MP4 using FFmpeg (high quality)
-  console.log(`    [4/4] Encoding to MP4 (CRF ${DEFAULT_SETTINGS.crf}, ${DEFAULT_SETTINGS.preset} preset)...`);
+  // Encode TGA sequence to MP4 using FFmpeg
+  const crf = quality?.crf || 18;
+  const preset = quality?.preset || 'medium';
+  console.log(`    [4/4] Encoding to MP4 (CRF ${crf}, ${preset} preset)...`);
   await encodeTgaToMp4({
     inputFolder: clipFolder,
     clipName,
     outputPath: clipOutputPath,
     framerate: DEFAULT_SETTINGS.framerate,
-    crf: DEFAULT_SETTINGS.crf,
-    preset: DEFAULT_SETTINGS.preset,
+    crf,
+    preset,
   });
   console.log(`    [4/4] Encoding completed: ${clipName}.mp4`);
   
@@ -1481,7 +1481,7 @@ function cleanupTgaFiles(folder) {
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, playerFilter, idFilter, voiceChat } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, quality, playerFilter, idFilter, voiceChat } = options;
   
   const recordedClips = [];
   const clipsFolder = path.join(outputPath, 'clips');
@@ -1561,6 +1561,7 @@ async function recordAllHighlights(options) {
         highlight,
         outputPath,
         clipIndex,
+        quality,
         voiceChat,
       });
       

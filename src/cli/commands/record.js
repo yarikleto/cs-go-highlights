@@ -10,6 +10,7 @@ import fs from 'fs';
 import { recordAllHighlights } from '../../recorder.js';
 import { cleanupTempFiles } from '../../merger.js';
 import { validateFileExists, validateDirExists, ensureDir, parseJsonFile, getHighlights } from '../validators.js';
+import { RECORDING_QUALITY } from '../../config.js';
 
 /**
  * Main record command handler
@@ -27,12 +28,21 @@ async function recordCommand(options) {
   const playerFilter = options.player || null;
   const idFilter = options.id || null;
   const voiceChat = options.voiceChat || false;
+  
+  // Validate quality preset
+  const qualityPreset = options.quality || RECORDING_QUALITY.default;
+  const quality = RECORDING_QUALITY[qualityPreset];
+  if (!quality) {
+    console.error(`Error: Unknown quality preset "${qualityPreset}"`);
+    console.error('Available presets: high, medium, fast, draft');
+    process.exit(1);
+  }
 
   // Parse highlights
   const highlightsData = parseJsonFile(highlightsPath, 'highlights.json');
 
-  // Count highlights (with filters)
-  const totalHighlights = countHighlights(highlightsData, playerFilter, idFilter);
+  // Count highlights and calculate estimated time (with filters)
+  const { count: totalHighlights, estimatedSeconds } = getHighlightStats(highlightsData, playerFilter, idFilter);
 
   if (totalHighlights === 0) {
     console.error('Error: No highlights found to record');
@@ -49,6 +59,9 @@ async function recordCommand(options) {
     csgoPath,
     outputPath,
     totalHighlights,
+    estimatedSeconds,
+    qualityPreset,
+    quality,
     playerFilter,
     idFilter,
   });
@@ -64,6 +77,7 @@ async function recordCommand(options) {
       hlaePath,
       csgoPath,
       outputPath,
+      quality,
       playerFilter,
       idFilter,
       voiceChat,
@@ -86,21 +100,34 @@ async function recordCommand(options) {
 }
 
 /**
- * Count highlights matching filters
+ * Get highlight statistics (count and estimated recording time)
  * 
  * @param {Object} highlightsData - Parsed highlights.json
  * @param {string|null} playerFilter - Steam ID filter
  * @param {string|null} idFilter - Highlight ID filter
- * @returns {number} Count of matching highlights
+ * @returns {{ count: number, estimatedSeconds: number }}
  */
-function countHighlights(highlightsData, playerFilter, idFilter) {
+function getHighlightStats(highlightsData, playerFilter, idFilter) {
   const highlights = getHighlights(highlightsData);
   
-  return highlights.filter(highlight => {
+  const filtered = highlights.filter(highlight => {
     const matchesPlayer = !playerFilter || highlight.player?.steamId === playerFilter;
     const matchesId = !idFilter || highlight.id === idFilter;
     return matchesPlayer && matchesId;
-  }).length;
+  });
+  
+  // Sum playback durations
+  const totalPlaybackSeconds = filtered.reduce((sum, h) => 
+    sum + (h.playback?.durationSeconds || h.durationSeconds || 20), 0);
+  
+  // Count unique demos (each demo load takes ~15 seconds)
+  const uniqueDemos = new Set(filtered.map(h => h.demoFile)).size;
+  const demoLoadOverhead = uniqueDemos * 15;
+  
+  return {
+    count: filtered.length,
+    estimatedSeconds: totalPlaybackSeconds + demoLoadOverhead,
+  };
 }
 
 /**
@@ -114,9 +141,31 @@ function printRecordSummary(params) {
   console.log(`HLAE path: ${params.hlaePath}`);
   console.log(`CS:GO path: ${params.csgoPath}`);
   console.log(`Output folder: ${params.outputPath}`);
+  console.log(`Quality: ${params.qualityPreset} (CRF ${params.quality.crf}, ${params.quality.preset})`);
   console.log(`Total highlights to record: ${params.totalHighlights}`);
+  console.log(`Estimated time: ~${formatDuration(params.estimatedSeconds)}`);
   if (params.playerFilter) console.log(`Filtering by player: ${params.playerFilter}`);
   if (params.idFilter) console.log(`Filtering by ID: ${params.idFilter}`);
+}
+
+/**
+ * Format seconds into human-readable duration
+ * 
+ * @param {number} seconds - Duration in seconds
+ * @returns {string} Formatted string (e.g., "5 min 30 sec" or "1 hr 15 min")
+ */
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hours > 0) {
+    return `${hours} hr ${minutes} min`;
+  } else if (minutes > 0) {
+    return `${minutes} min ${secs} sec`;
+  } else {
+    return `${secs} sec`;
+  }
 }
 
 /**
