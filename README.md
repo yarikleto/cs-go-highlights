@@ -519,7 +519,7 @@ node src/index.js compress --input ./output/highlights_final.mp4
 Compress with maximum compression:
 
 ```bash
-node src/index.js compress --input ./output/highlights_final.mp4 --power 10
+node src/index.js merge --clips ./output/clips_processed --transition 0.5
 ```
 
 Compress with custom output path:
