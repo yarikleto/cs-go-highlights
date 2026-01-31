@@ -115,6 +115,12 @@ function formatHighlightType(highlight) {
       const situation = highlight.situation || '1vX';
       return situation;
     }
+    case 'one-tap': {
+      // Show weapon category for one taps (e.g., "one-tap deagle", "one-tap AK")
+      const weapon = highlight.weapon || '';
+      const shortWeapon = weapon.replace('weapon_', '').replace('_', '-');
+      return `one-tap ${shortWeapon}`;
+    }
     case 'collateral': {
       const killCount = highlight.killCount || highlight.kills?.length || 2;
       return `collateral ${killCount}K`;

@@ -6,17 +6,20 @@
  * hide complexity from consumers.
  * 
  * Detection order matters for some highlight types to avoid duplicates:
- * 1. Kill Series (detected first to identify knife kills in series)
+ * 1. Kill Series (detected first to identify kills in series)
  * 2. Collaterals (independent)
  * 3. Knife Kills (excludes knives already in series)
- * 4. Clutches (independent, uses round data)
+ * 4. One Taps (excludes kills already in series)
+ * 5. Clutches (independent, uses round data)
  */
 
 import { KILL_POINTS, PRIORITIES, HIGHLIGHT_TYPES } from './constants.js';
+import { DETECTION } from '../config.js';
 import { calculateKillPoints } from './utils.js';
-import { detectKillSeries, getKnifeKillsInSeries } from './killSeries.js';
+import { detectKillSeries, getKnifeKillsInSeries, getKillTicksInSeries } from './killSeries.js';
 import { detectCollaterals } from './collateral.js';
 import { detectKnifeKills } from './knife.js';
+import { detectOneTaps } from './oneTap.js';
 import { detectClutches } from './clutch.js';
 
 /**
@@ -47,7 +50,7 @@ import { detectClutches } from './clutch.js';
  * });
  */
 function detectHighlights(demoData, config) {
-  const { tickRate, kills, rounds } = demoData;
+  const { tickRate, kills, rounds, shotsByPlayer } = demoData;
   
   // Extract config with backward compatibility
   // Supports both flat config and nested config structure
@@ -60,7 +63,7 @@ function detectHighlights(demoData, config) {
 
   const highlights = [];
 
-  // Step 1: Detect kill series first (needed for knife exclusion)
+  // Step 1: Detect kill series first (needed for knife/one-tap exclusion)
   const killSeriesHighlights = detectKillSeries(
     kills, 
     maxDelayTicks, 
@@ -70,8 +73,9 @@ function detectHighlights(demoData, config) {
   );
   highlights.push(...killSeriesHighlights);
 
-  // Step 2: Identify knife kills already in series (to avoid duplicates)
+  // Step 2: Identify kills already in series (to avoid duplicates)
   const knifeKillsInSeries = getKnifeKillsInSeries(kills, killSeriesHighlights);
+  const killTicksInSeries = getKillTicksInSeries(killSeriesHighlights);
 
   // Step 3: Detect collaterals (independent of other types)
   const collateralHighlights = detectCollaterals(kills, killPoints, priorities);
@@ -86,7 +90,22 @@ function detectHighlights(demoData, config) {
   );
   highlights.push(...knifeHighlights);
 
-  // Step 5: Detect clutches (uses round data, independent)
+  // Step 5: Detect one taps (excluding kills in series)
+  // One tap = single precise headshot without spraying
+  if (shotsByPlayer) {
+    const oneTapHighlights = detectOneTaps(
+      kills,
+      shotsByPlayer,
+      tickRate,
+      killPoints,
+      priorities,
+      { ...DETECTION, ...detection },  // Merge detection configs
+      killTicksInSeries
+    );
+    highlights.push(...oneTapHighlights);
+  }
+
+  // Step 6: Detect clutches (uses round data, independent)
   const clutchHighlights = detectClutches(rounds, detection.minEnemies, priorities);
   highlights.push(...clutchHighlights);
 
@@ -117,6 +136,7 @@ export {
   detectKillSeries,
   detectCollaterals,
   detectKnifeKills,
+  detectOneTaps,
   detectClutches,
   
   // Utilities

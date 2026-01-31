@@ -11,4 +11,5 @@ export {
   WEAPON_CATEGORIES,
   KILL_POINTS,
   CLUTCH_POINTS_MULTIPLIER,
+  DETECTION,
 } from '../config.js';

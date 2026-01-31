@@ -146,6 +146,37 @@ function createKnifeHighlight({
 }
 
 /**
+ * Create a one tap highlight
+ * 
+ * One tap = precise single-shot headshot without spraying
+ * Shows player's aim skill and composure
+ * 
+ * @param {Object} params - One tap parameters
+ * @param {Object} params.player - Player who got the one tap
+ * @param {number} params.tick - Tick when kill occurred
+ * @param {number} params.points - Points for the kill
+ * @param {string} params.weapon - Weapon used
+ * @param {string} params.weaponCategory - Weapon category (pistol/rifle/sniper)
+ * @param {Object} [params.priorities] - Custom priorities
+ * @returns {Object} One tap highlight object
+ */
+function createOneTapHighlight({
+  player,
+  tick,
+  points,
+  weapon,
+  weaponCategory,
+  priorities,
+}) {
+  return {
+    ...createBaseHighlight(HIGHLIGHT_TYPES.ONE_TAP, player, points, priorities),
+    tick,
+    weapon,
+    weaponCategory,
+  };
+}
+
+/**
  * Create a clutch highlight
  * 
  * Clutch = winning round when outnumbered (1vX situation)
@@ -187,4 +218,5 @@ export {
   createCollateralHighlight,
   createKnifeHighlight,
   createClutchHighlight,
+  createOneTapHighlight,
 };

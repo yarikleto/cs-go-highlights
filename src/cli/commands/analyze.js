@@ -135,6 +135,7 @@ function createResultsStructure() {
       totalDurationSeconds: 0,
       byType: {
         'solo': 0,
+        'one-tap': 0,
         'kill-series': 0,
         'collateral': 0,
         'knife': 0,

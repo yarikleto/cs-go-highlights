@@ -46,6 +46,7 @@ export const HIGHLIGHT_TYPES = Object.freeze({
   KNIFE: 'knife',
   COLLATERAL: 'collateral',
   KILL_SERIES: 'kill-series',
+  ONE_TAP: 'one-tap',
 });
 
 // =============================================================================
@@ -93,7 +94,23 @@ export const ENCODING = Object.freeze({
     merge: 'medium',
   },
   // Compression defaults
-  defaultCompressionPower: 5,  // Power 1-10 (5 = balanced)
+  defaultCompressionPower: 4,  // Power 1-10 (5 = balanced)
+});
+
+// =============================================================================
+// MERGE SETTINGS
+// =============================================================================
+
+/**
+ * Video merge and transition settings
+ */
+export const MERGE = Object.freeze({
+  // Crossfade transition between clips (xfade filter)
+  transition: {
+    enabled: true,            // Enable transitions by default
+    duration: 0.5,            // Transition duration in seconds (0.3-1.0 recommended)
+    type: 'fade',             // xfade transition type (fade, wipeleft, circleopen, etc.)
+  },
 });
 
 // =============================================================================
@@ -213,6 +230,11 @@ export const DETECTION = Object.freeze({
   // Shot tracking
   maxShotAge: 15,           // Max seconds to track shots
   maxLookback: 3,           // Max seconds to look back for firstShotTick
+  // One tap detection
+  oneTap: {
+    windowBefore: 2,        // Seconds before kill to check for other shots
+    windowAfter: 1,         // Seconds after kill to check for other shots
+  },
 });
 
 // =============================================================================
@@ -232,6 +254,8 @@ export const KILL_POINTS = Object.freeze({
   sniper_headshot: 6,
   sniper_noscope: 7,
   knife: 8,
+  // One tap bonus points (added to headshot points)
+  one_tap_bonus: 3,
 });
 
 /**
@@ -240,6 +264,7 @@ export const KILL_POINTS = Object.freeze({
  */
 export const PRIORITIES = Object.freeze({
   [HIGHLIGHT_TYPES.SOLO]: 1,
+  [HIGHLIGHT_TYPES.ONE_TAP]: 1.5,    // Below clutch, above solo
   [HIGHLIGHT_TYPES.CLUTCH]: 2,
   [HIGHLIGHT_TYPES.KNIFE]: 3,
   [HIGHLIGHT_TYPES.COLLATERAL]: 4,
@@ -381,6 +406,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   killPoints: { ...KILL_POINTS },
   priorities: {
     'solo': PRIORITIES[HIGHLIGHT_TYPES.SOLO],
+    'one-tap': PRIORITIES[HIGHLIGHT_TYPES.ONE_TAP],
     'clutch': PRIORITIES[HIGHLIGHT_TYPES.CLUTCH],
     'knife': PRIORITIES[HIGHLIGHT_TYPES.KNIFE],
     'collateral': PRIORITIES[HIGHLIGHT_TYPES.COLLATERAL],

@@ -233,7 +233,27 @@ function getKnifeKillsInSeries(kills, seriesHighlights) {
   return knifeKillsInSeries;
 }
 
+/**
+ * Get all kill ticks that are part of any series
+ * Used to exclude these kills from other detectors (e.g., one taps)
+ * 
+ * @param {Array} seriesHighlights - Detected kill series highlights
+ * @returns {Set<number>} Set of kill ticks in series
+ */
+function getKillTicksInSeries(seriesHighlights) {
+  const killTicks = new Set();
+  
+  for (const series of seriesHighlights) {
+    for (const kill of series.kills) {
+      killTicks.add(kill.tick);
+    }
+  }
+  
+  return killTicks;
+}
+
 export {
   detectKillSeries,
   getKnifeKillsInSeries,
+  getKillTicksInSeries,
 };

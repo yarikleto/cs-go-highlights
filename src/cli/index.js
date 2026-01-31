@@ -47,6 +47,7 @@ import {
   SLOWMO,
   MUSIC,
   ENCODING,
+  MERGE,
 } from '../config.js';
 
 // CLI metadata
@@ -114,7 +115,8 @@ program
   .requiredOption('--clips <path>', 'Path to folder containing clip files (.mp4)')
   .option('--output <path>', 'Output path for final video', PATHS.highlightsFinal)
   .option('--cleanup', 'Delete individual clips after merging')
-  .option('--transition <duration>', 'Add fade in/out transitions (duration in seconds)', parseFloat)
+  .option('--transition <duration>', `Crossfade transition duration in seconds (default: ${MERGE.transition.duration})`, parseFloat, MERGE.transition.enabled ? MERGE.transition.duration : undefined)
+  .option('--no-transition', 'Disable transitions between clips')
   .action(mergeCommand);
 
 /*
