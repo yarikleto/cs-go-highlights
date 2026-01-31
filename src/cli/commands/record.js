@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { recordAllHighlights } from '../../recorder.js';
 import { cleanupTempFiles } from '../../merger.js';
-import { validateFileExists, validateDirExists, ensureDir, parseJsonFile } from '../validators.js';
+import { validateFileExists, validateDirExists, ensureDir, parseJsonFile, getHighlights } from '../validators.js';
 
 /**
  * Main record command handler
@@ -94,19 +94,13 @@ async function recordCommand(options) {
  * @returns {number} Count of matching highlights
  */
 function countHighlights(highlightsData, playerFilter, idFilter) {
-  let count = 0;
+  const highlights = getHighlights(highlightsData);
   
-  for (const demo of highlightsData.demos) {
-    for (const highlight of demo.highlights) {
-      const matchesPlayer = !playerFilter || highlight.player.steamId === playerFilter;
-      const matchesId = !idFilter || highlight.id === idFilter;
-      if (matchesPlayer && matchesId) {
-        count++;
-      }
-    }
-  }
-  
-  return count;
+  return highlights.filter(highlight => {
+    const matchesPlayer = !playerFilter || highlight.player?.steamId === playerFilter;
+    const matchesId = !idFilter || highlight.id === idFilter;
+    return matchesPlayer && matchesId;
+  }).length;
 }
 
 /**

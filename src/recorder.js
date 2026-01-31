@@ -12,6 +12,7 @@ import {
   VISUAL_EFFECTS,
   MUSIC,
 } from './config.js';
+import { getHighlights } from './cli/validators.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1511,25 +1512,19 @@ async function recordAllHighlights(options) {
   
   let clipIndex = lastClipIndex;
   
-  // Collect all highlights across all demos
-  const allHighlights = [];
-  for (const demo of highlightsData.demos) {
-    for (const highlight of demo.highlights) {
-      // Apply filters if specified
-      if (playerFilter && highlight.player.steamId !== playerFilter) {
-        continue;
-      }
-      if (idFilter && highlight.id !== idFilter) {
-        continue;
-      }
-      
-      allHighlights.push({
-        ...highlight,
-        demoFile: demo.file,
-        tickRate: demo.tickRate,
-      });
+  // Collect all highlights (supports both old and new formats)
+  const allHighlightsRaw = getHighlights(highlightsData);
+  
+  // Apply filters
+  const allHighlights = allHighlightsRaw.filter(highlight => {
+    if (playerFilter && highlight.player?.steamId !== playerFilter) {
+      return false;
     }
-  }
+    if (idFilter && highlight.id !== idFilter) {
+      return false;
+    }
+    return true;
+  });
   
   // Filter out already recorded highlights
   const toRecord = allHighlights.filter(h => !existingClipIds.has(h.id));

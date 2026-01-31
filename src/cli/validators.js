@@ -116,22 +116,55 @@ function validateRange(value, min, max, description) {
 }
 
 /**
+ * Extract all highlights from highlights data (supports both formats)
+ * 
+ * Supports two formats:
+ * 1. New flat format: { highlights: [...] }
+ * 2. Old grouped format: { demos: [{ file, tickRate, highlights: [...] }] }
+ * 
+ * Each highlight is enriched with demoFile and tickRate if not present.
+ * 
+ * @param {Object} data - Parsed highlights.json content
+ * @returns {Array} Flat array of all highlights
+ */
+function getHighlights(data) {
+  // New format: flat highlights array
+  if (data.highlights && Array.isArray(data.highlights)) {
+    return data.highlights;
+  }
+  
+  // Old format: grouped by demos
+  if (data.demos && Array.isArray(data.demos)) {
+    const highlights = [];
+    for (const demo of data.demos) {
+      if (!demo.highlights) continue;
+      for (const highlight of demo.highlights) {
+        highlights.push({
+          ...highlight,
+          // Add demo info if not already present
+          demoFile: highlight.demoFile || demo.file,
+          tickRate: highlight.tickRate || demo.tickRate,
+        });
+      }
+    }
+    return highlights;
+  }
+  
+  return [];
+}
+
+/**
  * Build a mapping of highlight ID -> highlight data from highlights.json
  * Useful for looking up highlight metadata during processing
  * 
  * @param {Object} highlightsData - Parsed highlights.json content
- * @returns {Map<string, Object>} Map of highlight ID to highlight data
+ * @returns {Object} Map of highlight ID to highlight data
  */
 function buildHighlightMap(highlightsData) {
+  const highlights = getHighlights(highlightsData);
   const map = {};
-  for (const demo of highlightsData.demos) {
-    for (const highlight of demo.highlights) {
-      map[highlight.id] = {
-        ...highlight,
-        demoFile: demo.file,
-        tickRate: demo.tickRate,
-      };
-    }
+  for (const highlight of highlights) {
+    map[highlight.id] = highlight;
   }
   return map;
 }
@@ -170,6 +203,7 @@ export {
   parseJsonFile,
   findFilesByExtension,
   validateRange,
+  getHighlights,
   buildHighlightMap,
   sortClipFiles,
   extractHighlightId,

@@ -604,22 +604,113 @@ node src/index.js timestamps --highlights ./output/highlights.json
 #### Output Format
 
 ```
-00:00:00 | kill-series | de_mirage | mag-ua
-00:00:17 | kill-series | de_mirage | PlayerName
-00:00:42 | clutch | de_dust2 | AnotherPlayer
-00:01:03 | collateral | de_inferno | SomePlayer
+00:00:00 | 3K | de_mirage | mag-ua
+00:00:17 | ACE | de_mirage | PlayerName
+00:00:42 | 1v3 | de_dust2 | AnotherPlayer
+00:01:03 | one-tap deagle | de_inferno | SomePlayer
 ...
 ```
 
 Each line contains:
 - **Timestamp** (HH:MM:SS) - cumulative start time in the final merged video
-- **Highlight type** - kill-series, clutch, knife, collateral, or solo
+- **Highlight type** - formatted (3K, ACE, 1v3, one-tap deagle, knife, collateral 2K, etc.)
 - **Map name** - extracted from demo filename (de_mirage, de_dust2, etc.)
 - **Player name** - the player who made the highlight
 
 **Note:** Timestamps account for all video effects:
 - **Slowmo** expands time (e.g., 1 second at 0.6x becomes ~1.67 seconds)
 - **Speedup** compresses time (e.g., 10 seconds at 3x becomes ~3.33 seconds)
+
+### `top`
+
+Selects the top N highlights by "impressiveness" score. Useful for creating highlight compilations from large datasets.
+
+```bash
+node src/index.js top --highlights <path> [--count <n>] [--output <path>] [options]
+```
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--highlights <path>` | Yes | - | Path to `highlights.json` file |
+| `--count <n>` | No | `10` | Number of top highlights to select |
+| `--output <path>` | No | `./output/highlights_top.json` | Output file path |
+| `--show-scores` | No | - | Print detailed score breakdown to console |
+| `--player <steamId>` | No | - | Filter by player Steam ID |
+| `--type <type>` | No | - | Filter by highlight type (kill-series, clutch, etc.) |
+| `--min-kills <n>` | No | - | Minimum kill count |
+| `--unique-players <n>` | No | - | Max highlights per player (for variety) |
+
+#### Scoring Algorithm
+
+Highlights are ranked by a composite "impressiveness" score:
+
+```
+Score = Base + Type + KillCount + Intensity + Style + Weapon + Duration + Slowmo
+```
+
+| Factor | Description |
+|--------|-------------|
+| **Base** | Points from kills (headshots, weapon type) |
+| **Type** | kill-series/collateral: +15, one-tap: +12, clutch/knife: +5 |
+| **KillCount** | 3K: +5, 4K: +15, ACE: +30, 6K+: +40 |
+| **Intensity** | Faster kills = higher bonus (max +20 minus killGapSum) |
+| **Style** | +3 per headshot, +5 all headshots, +10 noscope HS |
+| **Weapon** | +3 for deagle/scout headshots |
+| **Duration** | Shorter clips get bonus (max +10) |
+| **Slowmo** | +3 if slowmo effect present |
+
+#### Examples
+
+Get top 10 highlights:
+
+```bash
+node src/index.js top --highlights ./output/highlights.json
+```
+
+Get top 20 with detailed score breakdown:
+
+```bash
+node src/index.js top --highlights ./output/highlights.json --count 20 --show-scores
+```
+
+Ensure variety (max 2 highlights per player):
+
+```bash
+node src/index.js top --highlights ./output/highlights.json --unique-players 2
+```
+
+Filter by type:
+
+```bash
+node src/index.js top --highlights ./output/highlights.json --type kill-series --min-kills 4
+```
+
+#### Output Format
+
+The output file uses a simplified format compatible with other commands:
+
+```json
+{
+  "generatedAt": "2026-01-31T...",
+  "sourceFile": "highlights.json",
+  "topCount": 10,
+  "filters": { "uniquePlayers": 2 },
+  "highlights": [
+    {
+      "_rank": 1,
+      "_score": { "total": 83.3, "base": 11, "typeBonus": 15, ... },
+      "id": "...",
+      "type": "kill-series",
+      "player": { "name": "...", "steamId": "..." },
+      ...
+    }
+  ]
+}
+```
+
+You can use the output file directly with other commands (`record`, `postprocess-*`, `timestamps`).
 
 ## Typical Workflow
 
@@ -645,9 +736,46 @@ Each line contains:
 
 ## Highlight Types
 
-The tool detects four types of highlights, each with a priority level (used for collision resolution):
+The tool detects six types of highlights, each with a priority level (used for collision resolution):
 
-### 1. Kill Series (Priority: 2)
+### 1. Solo Kill (Priority: 1)
+
+Manually added single kill highlights via `--solo-kills-file`. Lowest priority - will be removed if colliding with other highlights.
+
+### 2. One-Tap (Priority: 1.5)
+
+A single headshot kill with exactly one bullet fired within the time window (2s before, 1s after the kill).
+
+**Qualification criteria:**
+- Must be a headshot
+- Only one shot fired in the detection window
+- Excludes shotguns, SMGs, machine guns
+- Excludes AWP and auto-snipers (G3SG1, SCAR-20) - one-shot kills are expected
+- SSG08 (Scout) headshots qualify as one-taps
+
+**Note:** Kills that are part of a kill-series are excluded from one-tap detection.
+
+### 3. Clutch (Priority: 2)
+
+A 1vX situation where the solo player's team wins the round.
+
+**Qualification criteria:**
+- Minimum 2 enemies (1v2 or higher)
+- The clutching player must get at least 1 kill
+- The clutching player's team must win the round
+- Includes posthumous wins (e.g., T plants bomb, dies, bomb explodes)
+
+### 4. Knife Kill (Priority: 3)
+
+Any kill with a knife weapon. Includes all knife skins (bayonet, karambit, butterfly, etc.).
+
+**Note:** If a knife kill is part of a qualifying kill series, only the series is recorded (no duplicate knife highlight).
+
+### 5. Collateral (Priority: 4)
+
+Two or more enemies killed with a single shot (same tick).
+
+### 6. Kill Series (Priority: 5)
 
 A sequence of kills by the same player within a time window.
 
@@ -660,31 +788,11 @@ A sequence of kills by the same player within a time window.
 - Series cannot span round boundaries
 - Team kills and suicides are ignored
 
-### 2. Knife Kill (Priority: 3)
-
-Any kill with a knife weapon. Includes all knife skins (bayonet, karambit, butterfly, etc.).
-
-**Note:** If a knife kill is part of a qualifying kill series, only the series is recorded (no duplicate knife highlight).
-
-### 3. Collateral (Priority: 4)
-
-Two or more enemies killed with a single shot (same tick).
-
-### 4. Clutch (Priority: 5)
-
-A 1vX situation where the solo player's team wins the round.
-
-**Qualification criteria:**
-- Minimum 2 enemies (1v2 or higher)
-- The clutching player must get at least 1 kill
-- The clutching player's team must win the round
-- Includes posthumous wins (e.g., T plants bomb, dies, bomb explodes)
-
 ## Collision Resolution
 
 When multiple highlights overlap in time for the same player, the tool keeps the higher priority highlight:
 
-1. **Priority comparison**: Higher priority wins (clutch > collateral > knife > kill-series)
+1. **Priority comparison**: Higher priority wins (kill-series > collateral > knife > clutch > one-tap > solo)
 2. **Kill count comparison**: For kill-series vs kill-series, more kills wins
 3. **Points comparison**: If priority and kill count are equal, higher points wins
 
@@ -846,10 +954,12 @@ Default configuration (hardcoded in `src/index.js`):
     knife: 8
   },
   priorities: {
-    'kill-series': 2,
+    'solo': 1,
+    'one-tap': 1.5,
+    'clutch': 2,
     'knife': 3,
     'collateral': 4,
-    'clutch': 5
+    'kill-series': 5
   }
 }
 ```

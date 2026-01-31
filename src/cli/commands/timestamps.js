@@ -12,7 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { parseJsonFile } from '../validators.js';
+import { parseJsonFile, getHighlights } from '../validators.js';
 import { DETECTION } from '../../config.js';
 
 /**
@@ -147,20 +147,9 @@ async function timestampsCommand(options) {
   console.log(`Speedup: ${speedupMultiplier}x`);
   console.log(`Slowmo: ${slowmoFactor}x`);
 
-  // Parse highlights.json
+  // Parse highlights.json (supports both old and new formats)
   const highlightsData = parseJsonFile(highlightsPath, 'highlights.json');
-
-  // Collect all highlights in order
-  const allHighlights = [];
-  for (const demo of highlightsData.demos) {
-    for (const highlight of demo.highlights) {
-      allHighlights.push({
-        ...highlight,
-        demoFile: demo.file,
-        tickRate: demo.tickRate,
-      });
-    }
-  }
+  const allHighlights = getHighlights(highlightsData);
 
   if (allHighlights.length === 0) {
     console.log('\nNo highlights found.');

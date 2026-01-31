@@ -18,6 +18,7 @@
  * - merge-music  - Combine audio files
  * - resync-music - Recalculate music timing from offsets
  * - timestamps   - Generate highlight timestamps list
+ * - top          - Select top N highlights by impressiveness score
  * 
  * @example
  * # Full pipeline
@@ -40,6 +41,7 @@ import {
   playerKillsCommand,
   mergeMusicCommand,
   timestampsCommand,
+  topCommand,
 } from './commands/index.js';
 import {
   PATHS,
@@ -65,7 +67,7 @@ program
 program
   .command('analyze')
   .description('Analyze demo files and detect highlights')
-  .requiredOption('--demos <path>', 'Path to folder with .dem files')
+  .option('--demos <path>', 'Path to folder with .dem files', PATHS.demos)
   .option('--output <path>', 'Output folder for highlights.json', PATHS.output)
   .option('--reset-music', 'Reset music mapping (discard existing offsets)')
   .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
@@ -74,10 +76,10 @@ program
 program
   .command('record')
   .description('Record highlights using HLAE (produces raw clips without effects)')
-  .requiredOption('--highlights <path>', 'Path to highlights.json file')
-  .requiredOption('--demos <path>', 'Path to folder with .dem files')
-  .requiredOption('--hlae <path>', 'Path to HLAE executable (hlae.exe)')
-  .requiredOption('--csgo <path>', 'Path to CS:GO installation folder')
+  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
+  .option('--demos <path>', 'Path to folder with .dem files', PATHS.demos)
+  .option('--hlae <path>', 'Path to HLAE executable (hlae.exe)', PATHS.hlae)
+  .option('--csgo <path>', 'Path to CS:GO installation folder', PATHS.csgo)
   .option('--output <path>', 'Output folder for clips', PATHS.output)
   .option('--player <steamId>', 'Filter highlights by player Steam ID')
   .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
@@ -87,7 +89,7 @@ program
 program
   .command('postprocess-ui')
   .description('Apply visual effects to recorded clips (slowmo, speedup, overlay)')
-  .requiredOption('--highlights <path>', 'Path to highlights.json file')
+  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
   .option('--clips <path>', 'Path to folder containing raw clips', PATHS.clips)
   .option('--output <path>', 'Output folder for processed clips', PATHS.clipsProcessed)
   .option('--speedup <multiplier>', `Speed up clutch gaps (default: ${SPEEDUP.defaultMultiplier}x)`, parseFloat, SPEEDUP.defaultMultiplier)
@@ -100,7 +102,7 @@ program
 program
   .command('postprocess-sound')
   .description('Apply music to processed clips (separate step for fast music fine-tuning)')
-  .requiredOption('--highlights <path>', 'Path to highlights.json file')
+  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
   .option('--clips <path>', 'Path to processed clips folder', PATHS.clipsProcessed)
   .option('--output <path>', 'Output folder for clips with music', PATHS.clipsFinal)
   .option('--music <folder>', 'Path to music folder', MUSIC.defaultFolder)
@@ -156,11 +158,24 @@ program
 program
   .command('timestamps')
   .description('Generate a list of highlight timestamps (after speedup/slowmo) with type, map, and player')
-  .requiredOption('--highlights <path>', 'Path to highlights.json file')
+  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
   .option('--output <path>', 'Output file path for timestamps', PATHS.timestamps)
   .option('--speedup <multiplier>', `Speedup multiplier used in postprocess (default: ${SPEEDUP.defaultMultiplier})`, parseFloat, SPEEDUP.defaultMultiplier)
   .option('--slowmo <factor>', `Slowmo factor used in postprocess (default: ${SLOWMO.defaultFactor})`, parseFloat, SLOWMO.defaultFactor)
   .action(timestampsCommand);
+
+program
+  .command('top')
+  .description('Select top N highlights by impressiveness score')
+  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
+  .option('--count <n>', 'Number of top highlights to select', parseInt, 10)
+  .option('--output <path>', 'Output file path for top highlights', './output/highlights_top.json')
+  .option('--show-scores', 'Print detailed score breakdown to console')
+  .option('--player <steamId>', 'Filter by player Steam ID')
+  .option('--type <type>', 'Filter by highlight type (kill-series, clutch, etc.)')
+  .option('--min-kills <n>', 'Minimum kill count', parseInt)
+  .option('--unique-players <n>', 'Max highlights per player (for variety)', parseInt)
+  .action(topCommand);
 
 // Parse CLI arguments
 program.parse(process.argv);

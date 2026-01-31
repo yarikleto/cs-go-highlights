@@ -24,12 +24,17 @@
  */
 export const PATHS = Object.freeze({
   output: './output',
+  demos: './demos',
+  highlights: './output/highlights.json',
   clips: './output/clips',
   clipsProcessed: './output/clips_processed',
   clipsFinal: './output/clips_final',
   highlightsFinal: './output/highlights_final.mp4',
   timestamps: './output/timestamps.txt',
   musicMapping: './output/music-mapping.json',
+  // External tools (Windows default paths)
+  hlae: 'C:\\Program Files (x86)\\HLAE\\hlae.exe',
+  csgo: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive',
 });
 
 // =============================================================================
@@ -269,6 +274,76 @@ export const PRIORITIES = Object.freeze({
   [HIGHLIGHT_TYPES.KNIFE]: 3,
   [HIGHLIGHT_TYPES.COLLATERAL]: 4,
   [HIGHLIGHT_TYPES.KILL_SERIES]: 5,
+});
+
+// =============================================================================
+// HIGHLIGHT RANKING (for top command)
+// =============================================================================
+
+/**
+ * Scoring weights for ranking highlights by "impressiveness"
+ * Used by the `top` command to select best highlights
+ * 
+ * Higher score = more spectacular/impressive highlight
+ * Formula: Base + Type + KillCount + Intensity + Style + Weapon + Duration + Slowmo
+ */
+export const RANKING = Object.freeze({
+  // Type bonus - some highlight types are inherently more impressive
+  typeBonus: {
+    'kill-series': 15,   // Fast multi-kills are most spectacular
+    'collateral': 15,    // Multi-kill with one bullet
+    'one-tap': 12,       // Precision shot
+    'clutch': 5,         // Slow, less visually impressive
+    'knife': 5,          // Risky but less skillful
+    'solo': 0,           // Base case
+  },
+  
+  // Kill count bonus - more kills = more impressive
+  killCountBonus: {
+    2: 0,
+    3: 5,
+    4: 15,
+    5: 30,   // ACE
+    6: 40,   // 6K+
+  },
+  
+  // Intensity - faster kills are more exciting
+  // Formula: max(0, intensityMaxBonus - killGapSum)
+  intensityMaxBonus: 20,
+  
+  // Style bonuses - special achievements
+  styleBonus: {
+    perHeadshot: 3,          // Each headshot adds impact
+    allHeadshotsInSeries: 5, // Clean execution bonus
+    knifeInSeries: 10,       // Style points for knife in multi-kill
+    allHeadshotsSpecial: 8,  // All HS with deagle/sniper
+    noscopeHeadshot: 10,     // Legendary shot
+    noscopeBody: 3,          // Still impressive
+  },
+  
+  // Weapon skill bonus - harder weapons deserve extra credit
+  weaponSkillBonus: {
+    pistolHeadshot: 3,   // deagle, revolver headshots
+    scoutHeadshot: 3,    // ssg08 headshots
+  },
+  
+  // Clutch difficulty (reduced since clutches are slow)
+  clutchDifficulty: {
+    2: 0,
+    3: 5,
+    4: 10,
+    5: 15,
+  },
+  
+  // Duration bonus - shorter highlights are better for compilations
+  // Formula: max(0, maxBonus - playbackDuration / divisor)
+  durationBonus: {
+    maxBonus: 10,
+    divisor: 3,
+  },
+  
+  // Slowmo presence indicates a dramatic moment
+  slowmoBonus: 3,
 });
 
 /**
