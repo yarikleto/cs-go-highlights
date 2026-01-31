@@ -578,6 +578,49 @@ This helps identify:
 - Gap between kills (for understanding kill-series detection)
 - Whether kills were headshots or body shots
 
+### `timestamps`
+
+Generates a list of highlight timestamps (after speedup/slowmo effects are applied) with highlight type, map name, and player name. Useful for creating video chapter markers or quick reference.
+
+```bash
+node src/index.js timestamps --highlights <path> [--output <path>] [--speedup <multiplier>] [--slowmo <factor>]
+```
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--highlights <path>` | Yes | - | Path to `highlights.json` file |
+| `--output <path>` | No | `./output/timestamps.txt` | Output file path for timestamps |
+| `--speedup <multiplier>` | No | `3` | Speedup multiplier used in postprocess |
+| `--slowmo <factor>` | No | `0.6` | Slowmo factor used in postprocess |
+
+#### Example
+
+```bash
+node src/index.js timestamps --highlights ./output/highlights.json
+```
+
+#### Output Format
+
+```
+00:00:00 | kill-series | de_mirage | mag-ua
+00:00:17 | kill-series | de_mirage | PlayerName
+00:00:42 | clutch | de_dust2 | AnotherPlayer
+00:01:03 | collateral | de_inferno | SomePlayer
+...
+```
+
+Each line contains:
+- **Timestamp** (HH:MM:SS) - cumulative start time in the final merged video
+- **Highlight type** - kill-series, clutch, knife, collateral, or solo
+- **Map name** - extracted from demo filename (de_mirage, de_dust2, etc.)
+- **Player name** - the player who made the highlight
+
+**Note:** Timestamps account for all video effects:
+- **Slowmo** expands time (e.g., 1 second at 0.6x becomes ~1.67 seconds)
+- **Speedup** compresses time (e.g., 10 seconds at 3x becomes ~3.33 seconds)
+
 ## Typical Workflow
 
 1. **Analyze** demos to detect highlights:

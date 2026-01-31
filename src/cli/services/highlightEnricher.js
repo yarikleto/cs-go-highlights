@@ -17,7 +17,7 @@ import { roundSeconds, secondsToTicks } from '../utils/time.js';
 /**
  * Enrich a highlight with playback metadata
  * 
- * Adds: id, demoFile, durationSeconds, playback { startTick, endTick, ... }
+ * Adds: id, demoFile, durationSeconds, killGapSum, playback { startTick, endTick, ... }
  * 
  * @param {Object} highlight - Raw highlight from detector
  * @param {Object} demoData - Demo data (tickRate, rounds, shotsByPlayer)
@@ -36,6 +36,9 @@ function enrichHighlight(highlight, demoData, demoFile, config) {
   
   // Calculate duration
   const durationSeconds = roundSeconds((endTick - startTick) / tickRate);
+  
+  // Calculate total time between kills (intensity metric)
+  const killGapSum = calculateKillGapSum(highlight, tickRate);
   
   // Calculate playback boundaries with padding
   const playback = calculatePlaybackBoundaries(
@@ -68,6 +71,7 @@ function enrichHighlight(highlight, demoData, demoFile, config) {
     ...highlight,
     demoFile,
     durationSeconds,
+    killGapSum,
     playback: {
       ...playback,
       speedupSegments,
@@ -109,6 +113,37 @@ function getHighlightTickRange(highlight) {
 function generateHighlightId(demoFile, highlight, startTick, endTick) {
   const idSource = `${demoFile}|${highlight.player.steamId}|${highlight.type}|${startTick}|${endTick}`;
   return crypto.createHash('sha256').update(idSource).digest('hex').substring(0, 12);
+}
+
+/**
+ * Calculate total time between consecutive kills (intensity metric)
+ * 
+ * Lower value = more intense/exciting highlight (kills happen faster)
+ * Can be used to rank highlights by "intensity" or "action density"
+ * 
+ * For single-kill highlights (knife, solo, collateral at same tick): returns 0
+ * For multi-kill highlights: sum of gaps between each consecutive kill
+ * 
+ * @param {Object} highlight - Highlight object with kills array
+ * @param {number} tickRate - Server tick rate
+ * @returns {number} Total gap time in seconds (0 for single-kill highlights)
+ */
+function calculateKillGapSum(highlight, tickRate) {
+  // Must have kills array with at least 2 kills to have gaps
+  if (!highlight.kills || highlight.kills.length < 2) {
+    return 0;
+  }
+  
+  // Sort kills by tick (should already be sorted, but ensure)
+  const sortedKills = [...highlight.kills].sort((a, b) => a.tick - b.tick);
+  
+  let totalGapTicks = 0;
+  for (let i = 1; i < sortedKills.length; i++) {
+    const gap = sortedKills[i].tick - sortedKills[i - 1].tick;
+    totalGapTicks += gap;
+  }
+  
+  return roundSeconds(totalGapTicks / tickRate);
 }
 
 /**
@@ -409,6 +444,7 @@ export {
   enrichAllHighlights,
   getHighlightTickRange,
   generateHighlightId,
+  calculateKillGapSum,
   calculatePlaybackBoundaries,
   calculateSpeedupSegments,
   calculateSlowmotion,

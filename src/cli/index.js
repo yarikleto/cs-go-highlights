@@ -17,6 +17,7 @@
  * - player-kills - Analyze kills by specific player
  * - merge-music  - Combine audio files
  * - resync-music - Recalculate music timing from offsets
+ * - timestamps   - Generate highlight timestamps list
  * 
  * @example
  * # Full pipeline
@@ -38,6 +39,7 @@ import {
   compressCommand,
   playerKillsCommand,
   mergeMusicCommand,
+  timestampsCommand,
 } from './commands/index.js';
 
 // CLI metadata
@@ -141,6 +143,15 @@ program
   .description('Recalculate music startTime/endTime based on manual offset values in music-mapping.json')
   .option('--mapping <path>', 'Path to music-mapping.json', './output/music-mapping.json')
   .action(resyncMusicCommand);
+
+program
+  .command('timestamps')
+  .description('Generate a list of highlight timestamps (after speedup/slowmo) with type, map, and player')
+  .requiredOption('--highlights <path>', 'Path to highlights.json file')
+  .option('--output <path>', 'Output file path for timestamps', './output/timestamps.txt')
+  .option('--speedup <multiplier>', 'Speedup multiplier used in postprocess (default: 3)', parseFloat)
+  .option('--slowmo <factor>', 'Slowmo factor used in postprocess (default: 0.6)', parseFloat)
+  .action(timestampsCommand);
 
 // Parse CLI arguments
 program.parse(process.argv);
