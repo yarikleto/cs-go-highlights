@@ -274,6 +274,15 @@ export const DETECTION = Object.freeze({
   oneTap: {
     windowAfter: 2,         // Seconds after kill with no shots allowed
   },
+  // Flick shot detection
+  flick: {
+    thresholdAngle: 60,     // Minimum angle change (degrees) to qualify as flick
+    lookbackTicks: 16,      // Ticks to look back (~0.125s at 128 tickrate)
+  },
+  // Airborne detection
+  airborne: {
+    minVelocityZ: 50,       // Minimum vertical velocity to count as airborne (units/s)
+  },
 });
 
 // =============================================================================
@@ -324,42 +333,77 @@ export const PRIORITIES = Object.freeze({
 export const RANKING = Object.freeze({
   // Type bonus - some highlight types are inherently more impressive
   typeBonus: {
-    'kill-series': 15,   // Fast multi-kills are most spectacular
-    'collateral': 15,    // Multi-kill with one bullet
-    'one-tap': 12,       // Precision shot
-    'clutch': 5,         // Slow, less visually impressive
-    'knife': 5,          // Risky but less skillful
+    'kill-series': 20,   // Multi-kills are most spectacular (increased)
+    'collateral': 20,    // Multi-kill with one bullet
+    'one-tap': 10,       // Precision shot
+    'clutch': 0,         // Situational, not inherently impressive
+    'knife': 0,          // Single knife kill - not that impressive alone
     'solo': 0,           // Base case
   },
   
-  // Kill count bonus - more kills = more impressive
-  killCountBonus: {
-    2: 0,
-    3: 5,
-    4: 15,
-    5: 30,   // ACE
-    6: 40,   // 6K+
+  // Kill count bonus - formula based (scales to any kill count)
+  // Formula: sum of (basePerKill + (i-3) * growthPerKill) for i from 3 to kills
+  killCountFormula: {
+    basePerKill: 15,    // Base points for 3rd kill (increased to ensure 4K > 2K)
+    growthPerKill: 6,   // Additional points per kill level
+  },
+  
+  // Rapid fire multiplier - rewards many kills in short time
+  // Applied to killCountBonus when killGapSum is below threshold
+  rapidFire: {
+    threshold: 5,       // Max killGapSum (seconds) to qualify for bonus
+    multiplier: 1.5,    // Multiply killCountBonus by this factor
   },
   
   // Intensity - faster kills are more exciting
-  // Formula: max(0, intensityMaxBonus - killGapSum)
-  intensityMaxBonus: 20,
+  // Formula: max(0, intensityMaxBonus - killGapSum ^ gapPenaltyExponent) × (killCount - 1)
+  // Both speed AND kill count matter - 1 fast kill = 0, many fast kills = huge bonus
+  intensityMaxBonus: 8,     // Base intensity (multiplied by killCount-1)
+  gapPenaltyExponent: 1.5,  // >1 = geometric penalty (reduced since multiplied by kills)
   
   // Style bonuses - special achievements
   styleBonus: {
-    perHeadshot: 3,          // Each headshot adds impact
-    allHeadshotsInSeries: 5, // Clean execution bonus
-    knifeInSeries: 10,       // Style points for knife in multi-kill
-    allHeadshotsSpecial: 8,  // All HS with deagle/sniper
+    // Progressive headshot bonus: 1st HS = base, 2nd = base+growth, 3rd = base+2*growth...
+    headshotBase: 1.5,       // Base points for 1st headshot (reduced)
+    headshotGrowth: 1,       // Additional points per headshot level (reduced)
+    allHeadshotsInSeries: 6, // Clean execution bonus (all kills = headshots, 3+)
+    knifeInSeries: 8,        // Style points for knife in multi-kill
+    taserInSeries: 6,        // Style points for Zeus/taser in multi-kill
+    allHeadshotsSpecial: 8,  // All HS with deagle/pistol/sniper (3+)
     noscopeHeadshot: 10,     // Legendary shot
     noscopeBody: 3,          // Still impressive
   },
   
   // Weapon skill bonus - harder weapons deserve extra credit
-  weaponSkillBonus: {
-    pistolHeadshot: 3,   // deagle, revolver headshots
-    scoutHeadshot: 3,    // ssg08 headshots
+  // Weapon headshot bonuses (per kill)
+  // Pistol headshots are harder than rifle headshots
+  weaponHeadshotBonus: {
+    pistol: 2,           // All pistols - harder to land headshots
+    deagle: 3,           // Deagle/Revolver - even harder (slow fire rate)
+    shotgun: 3,          // Shotguns - spread makes headshots hard
+    smg: 1,              // SMG - need headshots due to low damage
+    rifle: 0,            // Rifles - baseline (easy headshots)
+    sniper: 1,           // Snipers - one shot weapon, headshot shows precision
+    machinegun: 1,       // Machine guns - spray control needed
+    noscope: 4,          // Noscope sniper kill - very hard
   },
+
+  // Kill condition bonuses (per kill)
+  killConditionBonus: {
+    attackerblind: 5,    // Kill while flashed - very hard
+    wallbang: 3,         // Kill through wall (penetrated > 0)
+    thrusmoke: 2,        // Kill through smoke
+    longDistance: 2,     // Long distance kill (> 3000 units)
+  },
+
+  // Penalty for easy/spam weapons (per kill)
+  easyWeaponPenalty: {
+    autosniper: -3,      // scar20, g3sg1 - easy spam
+    negev: -2,           // Negev - spray and pray
+  },
+
+  // Distance threshold for "long distance" bonus (meters)
+  longDistanceThreshold: 45,
   
   // Clutch difficulty (reduced since clutches are slow)
   clutchDifficulty: {

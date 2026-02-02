@@ -60,6 +60,7 @@ function createBaseHighlight(type, player, points, priorities = PRIORITIES) {
  * @param {number} params.points - Total points for series
  * @param {Array} params.kills - Array of individual kill data
  * @param {boolean} params.containsKnife - Whether series includes a knife kill
+ * @param {boolean} params.containsTaser - Whether series includes a taser/zeus kill
  * @param {boolean} params.allHeadshotsWithSpecialWeapon - Whether all kills are special headshots
  * @param {Object} [params.priorities] - Custom priorities
  * @returns {Object} Kill series highlight object
@@ -72,6 +73,7 @@ function createKillSeriesHighlight({
   points,
   kills,
   containsKnife,
+  containsTaser,
   allHeadshotsWithSpecialWeapon,
   priorities,
 }) {
@@ -82,6 +84,7 @@ function createKillSeriesHighlight({
     killCount,
     kills,
     containsKnife,
+    containsTaser,
     allHeadshotsWithSpecialWeapon,
   };
 }

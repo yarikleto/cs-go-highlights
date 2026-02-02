@@ -92,6 +92,7 @@ const DEFAULT_SETTINGS = {
   width: RECORDING.width,
   height: RECORDING.height,
   framerate: RECORDING.framerate,
+  crf: ENCODING.crf.postprocess,
 };
 
 /**
@@ -369,22 +370,35 @@ function steam64ToAccountId(steam64) {
  * Formats highlight type for display in overlay
  */
 function formatHighlightType(highlight) {
+  let typeText;
+  
   switch (highlight.type) {
     case 'clutch':
-      return highlight.situation ? highlight.situation.toUpperCase() + ' CLUTCH' : 'CLUTCH';
+      typeText = highlight.situation ? highlight.situation.toUpperCase() + ' CLUTCH' : 'CLUTCH';
+      break;
     case 'kill-series':
-      if (highlight.killCount === 5) return 'ACE';
-      if (highlight.killCount === 4) return 'QUAD KILL';
-      if (highlight.killCount === 3) return 'TRIPLE KILL';
-      if (highlight.killCount === 2) return 'DOUBLE KILL';
-      return `${highlight.killCount} KILLS`;
+      if (highlight.killCount === 5) typeText = 'ACE';
+      else if (highlight.killCount === 4) typeText = 'QUAD KILL';
+      else if (highlight.killCount === 3) typeText = 'TRIPLE KILL';
+      else if (highlight.killCount === 2) typeText = 'DOUBLE KILL';
+      else typeText = `${highlight.killCount} KILLS`;
+      break;
     case 'knife':
-      return 'KNIFE KILL';
+      typeText = 'KNIFE KILL';
+      break;
     case 'collateral':
-      return 'COLLATERAL';
+      typeText = 'COLLATERAL';
+      break;
     default:
-      return highlight.type.toUpperCase();
+      typeText = highlight.type.toUpperCase();
   }
+  
+  // Prepend rank if highlight has one (from top command)
+  if (highlight.rank) {
+    return `TOP ${highlight.rank}: ${typeText}`;
+  }
+  
+  return typeText;
 }
 
 /**

@@ -3,6 +3,8 @@
  */
 
 export * from './analyze.js';
+export * from './analyzeV2.js';
+export * from './analyzePostprocessUI.js';
 export * from './record.js';
 export * from './postprocessUI.js';
 export * from './postprocessSound.js';

@@ -79,6 +79,10 @@ function buildCollateralHighlight(tickKills, killPoints, priorities) {
     weapon: k.weapon,
     headshot: k.headshot,
     noscope: k.noscope || false,
+    penetrated: k.penetrated || 0,
+    thrusmoke: k.thrusmoke || false,
+    attackerblind: k.attackerblind || false,
+    distance: k.distance || 0,
   }));
   
   return createCollateralHighlight({

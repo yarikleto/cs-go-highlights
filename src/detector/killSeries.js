@@ -179,10 +179,15 @@ function buildSeriesHighlight(seriesKills, killPoints, priorities) {
     weapon: k.weapon,
     headshot: k.headshot,
     noscope: k.noscope || false,
+    penetrated: k.penetrated || 0,
+    thrusmoke: k.thrusmoke || false,
+    attackerblind: k.attackerblind || false,
+    distance: k.distance || 0,
     firstShotTick: k.firstShotTick || null, // When player started shooting (for timing)
   }));
   
   const containsKnife = seriesKills.some(k => k.isKnife);
+  const containsTaser = seriesKills.some(k => k.isTaser);
   const allHeadshotsWithSpecialWeapon = seriesKills.every(
     k => k.headshot && k.isHeadshotSeriesWeapon
   );
@@ -195,6 +200,7 @@ function buildSeriesHighlight(seriesKills, killPoints, priorities) {
     points: calculateTotalPoints(seriesKills, killPoints),
     kills: killsData,
     containsKnife,
+    containsTaser,
     allHeadshotsWithSpecialWeapon,
     priorities,
   });

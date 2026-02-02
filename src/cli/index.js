@@ -32,6 +32,8 @@
 import { program } from 'commander';
 import {
   analyzeCommand,
+  analyzeV2Command,
+  analyzePostprocessUICommand,
   resyncMusicCommand,
   recordCommand,
   postprocessUICommand,
@@ -74,6 +76,21 @@ program
   .option('--reset-music', 'Reset music mapping (discard existing offsets)')
   .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
   .action(analyzeCommand);
+
+program
+  .command('analyze-v2')
+  .description('Analyze demo files V2 (no points, with flick/airborne metadata)')
+  .option('--demos <path>', 'Path to folder with .dem files', PATHS.demos)
+  .option('--output <path>', 'Output folder for highlights.json', PATHS.output)
+  .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
+  .action(analyzeV2Command);
+
+program
+  .command('analyze-postprocess-ui')
+  .description('Calculate playback/speedup/slowmo for highlights (run after analyze-v2)')
+  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
+  .option('--output <path>', 'Output file path', './output/highlights_postprocess.json')
+  .action(analyzePostprocessUICommand);
 
 program
   .command('record')
@@ -134,7 +151,7 @@ program
   .command('compress')
   .description('Compress a video file to reduce file size')
   .requiredOption('--input <path>', 'Path to input video file')
-  .option('--power <level>', `Compression power 1-10 (1=light, 10=maximum)`, parseInt, ENCODING.defaultCompressionPower)
+  .option('--power <level>', `Compression power 1-10 (1=light, 10=maximum)`, (val) => parseInt(val, 10), ENCODING.defaultCompressionPower)
   .option('--output <path>', 'Output path for compressed video')
   .action(compressCommand);
 
@@ -171,14 +188,14 @@ program
   .command('top')
   .description('Select top N highlights by impressiveness score')
   .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--count <n>', 'Number of top highlights to select', parseInt, TOP_COMMAND.count)
+  .option('--count <n>', 'Number of top highlights to select', (val) => parseInt(val, 10), TOP_COMMAND.count)
   .option('--output <path>', 'Output file path for top highlights', PATHS.highlightsTop)
   .option('--asc', 'Sort ascending (lowest score first, default: descending)')
   .option('--show-scores', 'Print detailed score breakdown to console')
   .option('--player <steamId>', 'Filter by player Steam ID')
   .option('--type <type>', 'Filter by highlight type (kill-series, clutch, etc.)')
-  .option('--min-kills <n>', 'Minimum kill count', parseInt)
-  .option('--unique-players <n>', 'Max highlights per player (for variety)', parseInt, TOP_COMMAND.uniquePlayers)
+  .option('--min-kills <n>', 'Minimum kill count', (val) => parseInt(val, 10))
+  .option('--unique-players <n>', 'Max highlights per player (for variety)', (val) => parseInt(val, 10), TOP_COMMAND.uniquePlayers)
   .action(topCommand);
 
 // Parse CLI arguments

@@ -55,6 +55,78 @@ node src/index.js analyze --demos ./demos --solo-kills-file ./solo-kills.json
 node src/index.js analyze --demos ./my-demos --output ./results
 ```
 
+### `analyze-v2`
+
+**New simplified analyzer** that outputs raw highlight data without calculating playback/speedup/slowmo. This enables a modular pipeline where each step can be re-run independently.
+
+```bash
+node src/index.js analyze-v2 --demos <path> [--output <path>]
+```
+
+#### Key Differences from `analyze`
+
+| Feature | `analyze` | `analyze-v2` |
+|---------|-----------|--------------|
+| Points calculation | Yes | No (raw data only) |
+| Playback boundaries | Yes | No (use `analyze-postprocess-ui`) |
+| Speedup/Slowmo | Yes | No (use `analyze-postprocess-ui`) |
+| Music mapping | Yes | No (separate command) |
+| Kill metadata | Basic | Extended (flick, airborne, equipment) |
+
+#### New Kill Metadata
+
+Each kill now includes:
+
+- `flickAngle` / `isFlick` - Flick shot detection (angle change before kill)
+- `airborne` - Whether attacker was in the air
+- `attackerEquipmentValue` / `victimEquipmentValue` - Equipment value for eco frag detection
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--demos <path>` | Yes | `./demos` | Path to folder containing `.dem` files |
+| `--output <path>` | No | `./output` | Output folder for `highlights.json` |
+| `--solo-kills-file <path>` | No | - | Path to JSON file with solo kills mapping |
+
+#### Example
+
+```bash
+node src/index.js analyze-v2 --demos ./demos --output ./output
+```
+
+### `analyze-postprocess-ui`
+
+Calculates playback boundaries, speedup segments, and slowmo triggers for highlights. Run this **after** `analyze-v2`.
+
+```bash
+node src/index.js analyze-postprocess-ui --highlights <path> [--output <path>]
+```
+
+This command reads `highlights.json` (from `analyze-v2`) and outputs `highlights_postprocess.json` with full playback data.
+
+#### Options
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--highlights <path>` | No | `./output/highlights.json` | Path to highlights file |
+| `--output <path>` | No | `./output/highlights_postprocess.json` | Output file path |
+
+#### V2 Pipeline
+
+```bash
+# Step 1: Parse demos (raw data)
+node src/index.js analyze-v2 --demos ./demos
+
+# Step 2: Calculate playback/speedup/slowmo
+node src/index.js analyze-postprocess-ui --highlights ./output/highlights.json
+
+# Step 3: Record (use highlights_postprocess.json)
+node src/index.js record --highlights ./output/highlights_postprocess.json
+```
+
+This separation allows re-running postprocess calculations (e.g., to adjust padding or speedup settings) without re-parsing demo files.
+
 ### `record`
 
 Records all highlights using HLAE (Half-Life Advanced Effects). Produces **raw video clips without effects**.
@@ -242,6 +314,7 @@ When using `--overlay`, a player info overlay is displayed in the bottom-left co
 
 - **Player name** (large white text)
 - **Highlight type** (smaller yellow text: "1V4 CLUTCH", "ACE", "4K", "KNIFE KILL", etc.)
+- **Rank prefix** (if processing ranked highlights from `top` command: "TOP 15: ACE")
 - Fade in (0.5s), display (2.5s), fade out (0.5s)
 - Semi-transparent dark background for readability
 
@@ -783,19 +856,16 @@ Manually added single kill highlights via `--solo-kills-file`. Lowest priority -
 
 ### 2. One-Tap (Priority: 1.5)
 
-Impressive precision headshots with different criteria by weapon type:
+A "cold" one-tap - patient, precise first-shot headshot where the player waited for the perfect moment.
 
-**Pistols/Rifles/Machine guns (cold one-tap):**
+**Qualification criteria:**
 - No shots from round start until the kill (player was waiting)
 - First bullet is a headshot
 - No shots for 2 seconds after the kill
 
-**AWP/Scout (wallbang one-tap):**
-- Wallbang headshot (penetration kill through wall/object)
-- No shots for 2 seconds after the kill
-- Shots before kill are allowed
+**Allowed weapons:** Pistols, Rifles, Machine guns
 
-**Excluded weapons:** Auto-snipers (G3SG1, SCAR-20), Shotguns, SMGs, Knives
+**Excluded weapons:** All snipers (AWP, Scout, auto-snipers), Shotguns, SMGs, Knives
 
 **Note:** Kills that are part of a kill-series are excluded from one-tap detection.
 

@@ -11,7 +11,30 @@ import {
 } from './config.js';
 
 /**
- * Get weapon category: 'pistol', 'sniper', 'shotgun', 'rifle', or 'knife'
+ * Calculate angle difference between two eye angles (in degrees)
+ * Handles wrap-around for yaw (0-360)
+ * 
+ * @param {Object} angles1 - First angle {pitch, yaw}
+ * @param {Object} angles2 - Second angle {pitch, yaw}
+ * @returns {number} Angle difference in degrees
+ */
+function calculateAngleDelta(angles1, angles2) {
+  if (!angles1 || !angles2) return 0;
+  
+  // Normalize yaw difference (handle 0-360 wrap)
+  let yawDiff = Math.abs(angles2.yaw - angles1.yaw);
+  if (yawDiff > 180) yawDiff = 360 - yawDiff;
+  
+  // Pitch difference (no wrap needed, typically -90 to 90)
+  const pitchDiff = Math.abs(angles2.pitch - angles1.pitch);
+  
+  // Calculate total angle using spherical geometry approximation
+  // For small angles this is accurate enough
+  return Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+}
+
+/**
+ * Get weapon category: 'pistol', 'sniper', 'shotgun', 'rifle', 'knife', or 'taser'
  * @param {string} weapon - Weapon name
  * @returns {string}
  */
@@ -21,6 +44,9 @@ function getWeaponCategory(weapon) {
   
   if (KNIFE_WEAPONS.some(k => normalized.includes(k) || normalized === 'knife')) {
     return 'knife';
+  }
+  if (normalized === 'taser') {
+    return 'taser';
   }
   if (SNIPER_WEAPONS.includes(normalized)) {
     return 'sniper';
@@ -85,11 +111,52 @@ function parseDemo(filePath) {
     // Track ALL shots by player for speedup calculation
     // (steamId -> array of {tick, weapon})
     const allShotsByPlayer = new Map();
+    
+    // Track eye angles history for flick detection
+    // steamId -> array of {tick, pitch, yaw}
+    const eyeAnglesHistory = new Map();
+    const flickLookbackTicks = DETECTION.flick?.lookbackTicks || 16;
+    const flickThresholdAngle = DETECTION.flick?.thresholdAngle || 60;
+    const airborneMinVelocityZ = DETECTION.airborne?.minVelocityZ || 50;
 
     demoFile.on('start', () => {
       // Calculate tick rate from header
       if (demoFile.header.playbackTime > 0) {
         tickRate = Math.round(demoFile.header.playbackTicks / demoFile.header.playbackTime);
+      }
+    });
+    
+    // Track eye angles every tick for flick detection
+    demoFile.on('tickend', () => {
+      const currentTick = demoFile.currentTick;
+      const players = demoFile.entities.players;
+      
+      for (const player of players) {
+        if (!player || !player.isAlive) continue;
+        
+        const steamId = player.steam64Id?.toString();
+        if (!steamId) continue;
+        
+        // Get eye angles from player
+        const eyeAngles = player.eyeAngles;
+        if (!eyeAngles) continue;
+        
+        if (!eyeAnglesHistory.has(steamId)) {
+          eyeAnglesHistory.set(steamId, []);
+        }
+        
+        const history = eyeAnglesHistory.get(steamId);
+        history.push({
+          tick: currentTick,
+          pitch: eyeAngles.pitch,
+          yaw: eyeAngles.yaw,
+        });
+        
+        // Keep only recent history (lookback + some buffer)
+        const maxHistory = flickLookbackTicks * 2;
+        while (history.length > maxHistory) {
+          history.shift();
+        }
       }
     });
 
@@ -214,6 +281,36 @@ function parseDemo(filePath) {
         }
       }
       
+      // Calculate flick angle (max angle change in lookback window)
+      let flickAngle = 0;
+      if (attackerSteamId && eyeAnglesHistory.has(attackerSteamId)) {
+        const history = eyeAnglesHistory.get(attackerSteamId);
+        const currentTick = demoFile.currentTick;
+        
+        // Find angles within lookback window
+        const recentAngles = history.filter(h => currentTick - h.tick <= flickLookbackTicks);
+        
+        if (recentAngles.length >= 2) {
+          // Find max angle change from earliest to any later point
+          const earliest = recentAngles[0];
+          for (let i = 1; i < recentAngles.length; i++) {
+            const delta = calculateAngleDelta(earliest, recentAngles[i]);
+            if (delta > flickAngle) {
+              flickAngle = delta;
+            }
+          }
+        }
+      }
+      const isFlick = flickAngle >= flickThresholdAngle;
+      
+      // Check if attacker is airborne (in the air)
+      const velocity = attacker.velocity;
+      const airborne = velocity ? Math.abs(velocity.z) >= airborneMinVelocityZ : false;
+      
+      // Get equipment values for eco/upgrade detection
+      const attackerEquipmentValue = attacker.currentEquipmentValue || 0;
+      const victimEquipmentValue = victim.currentEquipmentValue || 0;
+      
       const kill = {
         tick: demoFile.currentTick,
         attacker: {
@@ -231,10 +328,21 @@ function parseDemo(filePath) {
         headshot: e.headshot,
         noscope: e.noscope || false,
         penetrated: e.penetrated || 0, // Number of walls penetrated (wallbang)
+        thrusmoke: e.thrusmoke || false, // Kill through smoke
+        attackerblind: e.attackerblind || false, // Attacker was flashed
+        distance: e.distance || 0, // Kill distance in units
         isKnife: weaponCategory === 'knife',
+        isTaser: weaponCategory === 'taser',
         isHeadshotSeriesWeapon: isHeadshotSeriesWeapon(e.weapon),
         round: rounds.length + 1,
         firstShotTick, // When player started shooting (for speedup timing)
+        // New metadata fields
+        flickAngle: Math.round(flickAngle * 100) / 100, // Angle change in degrees (rounded)
+        isFlick, // True if flickAngle >= threshold
+        airborne, // True if attacker was in the air
+        // Equipment value for eco/upgrade detection
+        attackerEquipmentValue, // Attacker's total equipment value ($)
+        victimEquipmentValue,   // Victim's total equipment value ($)
       };
 
       kills.push(kill);
@@ -253,7 +361,16 @@ function parseDemo(filePath) {
             weapon: e.weapon,
             headshot: e.headshot,
             noscope: e.noscope || false,
+            penetrated: e.penetrated || 0,
+            thrusmoke: e.thrusmoke || false,
+            attackerblind: e.attackerblind || false,
+            distance: e.distance || 0,
             firstShotTick, // When player started shooting
+            flickAngle: Math.round(flickAngle * 100) / 100,
+            isFlick,
+            airborne,
+            attackerEquipmentValue,
+            victimEquipmentValue,
           });
         }
       }

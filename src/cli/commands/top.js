@@ -22,14 +22,17 @@ import { parseJsonFile, getHighlights } from '../validators.js';
 import { RANKING } from '../../config.js';
 
 /**
- * Pistol weapons that get skill bonus for headshots
+ * Weapon categories for headshot bonus scoring
  */
-const SKILL_PISTOLS = ['deagle', 'revolver'];
-
-/**
- * Scout weapon for skill bonus
- */
-const SCOUT_WEAPON = 'ssg08';
+const WEAPON_CATEGORIES = {
+  deagle: ['deagle', 'revolver'],
+  pistol: ['glock', 'usp', 'hkp2000', 'p2000', 'p250', 'fiveseven', 'tec9', 'cz75', 'elite'],
+  shotgun: ['nova', 'xm1014', 'mag7', 'sawedoff'],
+  smg: ['mac10', 'mp9', 'mp7', 'mp5sd', 'ump45', 'p90', 'bizon'],
+  sniper: ['awp', 'ssg08', 'g3sg1', 'scar20'],
+  machinegun: ['m249', 'negev'],
+  // Everything else is rifle (default)
+};
 
 /**
  * Main command handler
@@ -183,12 +186,13 @@ function calculateScore(highlight) {
   const intensityBonus = getIntensityBonus(highlight);
   const styleBonus = getStyleBonus(highlight);
   const weaponBonus = getWeaponSkillBonus(highlight);
+  const conditionBonus = getKillConditionBonus(highlight);
   const clutchBonus = getClutchDifficultyBonus(highlight);
   const durationBonus = getDurationBonus(highlight);
   const slowmoBonus = getSlowmoBonus(highlight);
   
   const total = base + typeBonus + killCountBonus + intensityBonus 
-              + styleBonus + weaponBonus + clutchBonus + durationBonus + slowmoBonus;
+              + styleBonus + weaponBonus + conditionBonus + clutchBonus + durationBonus + slowmoBonus;
   
   return {
     total: Math.round(total * 10) / 10,
@@ -198,6 +202,7 @@ function calculateScore(highlight) {
     intensityBonus,
     styleBonus,
     weaponBonus,
+    conditionBonus,
     clutchBonus,
     durationBonus,
     slowmoBonus,
@@ -217,24 +222,48 @@ function getTypeBonus(type) {
 function getKillCountBonus(highlight) {
   const killCount = highlight.killCount || highlight.kills?.length || 1;
   
-  // Find highest applicable bonus
+  if (killCount < 3) return 0;
+  
+  const { basePerKill, growthPerKill } = RANKING.killCountFormula;
+  
   let bonus = 0;
-  for (const [count, value] of Object.entries(RANKING.killCountBonus)) {
-    if (killCount >= parseInt(count)) {
-      bonus = value;
-    }
+  for (let i = 3; i <= killCount; i++) {
+    // Progressive bonus: each kill worth more than previous
+    bonus += basePerKill + (i - 3) * growthPerKill;
+  }
+  
+  // Rapid fire bonus - many kills in short time is spectacular
+  const killGapSum = highlight.killGapSum || 0;
+  const rapidFire = RANKING.rapidFire;
+  if (rapidFire && killGapSum <= rapidFire.threshold && killCount >= 3) {
+    bonus *= rapidFire.multiplier;
   }
   
   return bonus;
 }
 
 /**
- * Get intensity bonus based on killGapSum
- * Lower killGapSum = faster kills = higher bonus
+ * Get intensity bonus based on killGapSum AND kill count
+ * Fast kills are only impressive if there are many of them
+ * Formula: max(0, maxBonus - gap^exponent) × (killCount - 1)
  */
 function getIntensityBonus(highlight) {
+  // Clutches don't get intensity bonus - speed of clutch isn't that impressive
+  if (highlight.type === 'clutch') return 0;
+  
+  const killCount = highlight.killCount || highlight.kills?.length || 1;
+  
+  // 1 kill = no intensity bonus (speed of single kill doesn't matter)
+  if (killCount <= 1) return 0;
+  
   const killGapSum = highlight.killGapSum || 0;
-  return Math.max(0, RANKING.intensityMaxBonus - killGapSum);
+  const exponent = RANKING.gapPenaltyExponent || 1;
+  const penalty = Math.pow(killGapSum, exponent);
+  const baseIntensity = Math.max(0, RANKING.intensityMaxBonus - penalty);
+  
+  // Scale intensity by kill count - more kills + fast = exponentially better
+  const killMultiplier = killCount - 1;
+  return baseIntensity * killMultiplier;
 }
 
 /**
@@ -265,11 +294,16 @@ function getStyleBonus(highlight) {
     headshotCount = 1;
   }
   
-  // Per-headshot bonus
-  bonus += headshotCount * RANKING.styleBonus.perHeadshot;
+  // Progressive headshot bonus: 1st HS = base, 2nd = base+growth, etc.
+  // Formula: sum of (base + i*growth) for i from 0 to headshotCount-1
+  const hsBase = RANKING.styleBonus.headshotBase || 2;
+  const hsGrowth = RANKING.styleBonus.headshotGrowth || 2;
+  for (let i = 0; i < headshotCount; i++) {
+    bonus += hsBase + i * hsGrowth;
+  }
   
-  // All headshots in series bonus
-  if (kills.length >= 2 && headshotCount === kills.length) {
+  // All headshots in series bonus (only for 3+ kills)
+  if (kills.length >= 3 && headshotCount === kills.length) {
     bonus += RANKING.styleBonus.allHeadshotsInSeries;
   }
   
@@ -285,8 +319,13 @@ function getStyleBonus(highlight) {
     bonus += RANKING.styleBonus.knifeInSeries;
   }
   
-  // All headshots with special weapon bonus
-  if (highlight.allHeadshotsWithSpecialWeapon) {
+  // Taser/Zeus in series bonus
+  if (highlight.containsTaser) {
+    bonus += RANKING.styleBonus.taserInSeries;
+  }
+  
+  // All headshots with special weapon bonus (only for 3+ kills)
+  if (highlight.allHeadshotsWithSpecialWeapon && kills.length >= 3) {
     bonus += RANKING.styleBonus.allHeadshotsSpecial;
   }
   
@@ -296,35 +335,111 @@ function getStyleBonus(highlight) {
 /**
  * Get weapon skill bonus for difficult weapons
  */
+/**
+ * Get weapon category for scoring
+ */
+function getWeaponCategory(weapon) {
+  const normalized = (weapon || '').toLowerCase().replace('weapon_', '');
+  
+  for (const [category, weapons] of Object.entries(WEAPON_CATEGORIES)) {
+    if (weapons.some(w => normalized.includes(w))) {
+      return category;
+    }
+  }
+  return 'rifle'; // Default
+}
+
 function getWeaponSkillBonus(highlight) {
   let bonus = 0;
   const kills = highlight.kills || [];
+  const bonuses = RANKING.weaponHeadshotBonus;
+  const killCount = highlight.killCount || kills.length || 1;
   
-  // Check each kill for skill weapons
+  // Headshot multiplier scales with kill count
+  // 2K = 1x, 3K = 1.5x, 4K = 2x, 5K = 2.5x, etc.
+  const hsMultiplier = killCount / 2;
+  
+  // Check each kill for weapon bonus
   for (const kill of kills) {
-    if (!kill.headshot) continue;
+    const category = getWeaponCategory(kill.weapon);
     
-    const weapon = (kill.weapon || '').toLowerCase().replace('weapon_', '');
-    
-    // Pistol headshots (deagle, revolver)
-    if (SKILL_PISTOLS.some(p => weapon.includes(p))) {
-      bonus += RANKING.weaponSkillBonus.pistolHeadshot;
+    // Noscope bonus (any noscope kill, not just headshot)
+    if (kill.noscope && category === 'sniper') {
+      bonus += (bonuses.noscope || 0) * hsMultiplier;
     }
-    
-    // Scout headshots
-    if (weapon.includes(SCOUT_WEAPON)) {
-      bonus += RANKING.weaponSkillBonus.scoutHeadshot;
+    // Regular headshot bonus - scaled by kill count
+    else if (kill.headshot) {
+      bonus += (bonuses[category] || 0) * hsMultiplier;
     }
   }
   
-  // One-tap with skill weapon
+  // One-tap weapon bonus
   if (highlight.type === 'one-tap') {
-    const weapon = (highlight.weapon || '').toLowerCase().replace('weapon_', '');
-    if (SKILL_PISTOLS.some(p => weapon.includes(p))) {
-      bonus += RANKING.weaponSkillBonus.pistolHeadshot;
+    const category = getWeaponCategory(highlight.weapon);
+    bonus += bonuses[category] || 0;
+  }
+  
+  return Math.round(bonus * 10) / 10;
+}
+
+/**
+ * Easy/spam weapons that get a penalty
+ */
+const EASY_WEAPONS = {
+  autosniper: ['scar20', 'g3sg1'],
+  negev: ['negev'],
+};
+
+/**
+ * Get easy weapon category (for penalty)
+ */
+function getEasyWeaponCategory(weapon) {
+  const normalized = (weapon || '').toLowerCase().replace('weapon_', '');
+  
+  for (const [category, weapons] of Object.entries(EASY_WEAPONS)) {
+    if (weapons.some(w => normalized.includes(w))) {
+      return category;
     }
-    if (weapon.includes(SCOUT_WEAPON)) {
-      bonus += RANKING.weaponSkillBonus.scoutHeadshot;
+  }
+  return null;
+}
+
+/**
+ * Get kill condition bonus (wallbang, thrusmoke, attackerblind, distance)
+ * Also applies penalty for easy/spam weapons
+ */
+function getKillConditionBonus(highlight) {
+  let bonus = 0;
+  const kills = highlight.kills || [];
+  const bonuses = RANKING.killConditionBonus;
+  const penalties = RANKING.easyWeaponPenalty || {};
+  const distanceThreshold = RANKING.longDistanceThreshold || 3000;
+  
+  for (const kill of kills) {
+    // Attacker was flashed
+    if (kill.attackerblind) {
+      bonus += bonuses.attackerblind || 0;
+    }
+    
+    // Wallbang (penetrated through surface)
+    if (kill.penetrated > 0) {
+      bonus += bonuses.wallbang || 0;
+    }
+    
+    // Through smoke
+    if (kill.thrusmoke) {
+      bonus += bonuses.thrusmoke || 0;
+    }
+    
+    // Long distance kill
+    if (kill.distance > distanceThreshold) {
+      bonus += bonuses.longDistance || 0;
+    }
+    
+    // Easy weapon penalty
+    const easyCategory = getEasyWeaponCategory(kill.weapon);
+    if (easyCategory) {
+      bonus += penalties[easyCategory] || 0;
     }
   }
   
@@ -396,7 +511,7 @@ function printScoreBreakdown(highlights) {
     console.log(`#${h.rank} [${s.total}] ${h.player?.name} - ${formatType(h)}`);
     console.log(`   Base:${s.base} Type:+${s.typeBonus} Kills:+${s.killCountBonus} ` +
                 `Int:+${s.intensityBonus.toFixed(1)} Style:+${s.styleBonus} ` +
-                `Wpn:+${s.weaponBonus} Dur:+${s.durationBonus.toFixed(1)} Slow:+${s.slowmoBonus}`);
+                `Wpn:+${s.weaponBonus} Cond:+${s.conditionBonus} Dur:+${s.durationBonus.toFixed(1)} Slow:+${s.slowmoBonus}`);
     if (s.clutchBonus > 0) {
       console.log(`   Clutch difficulty:+${s.clutchBonus}`);
     }
