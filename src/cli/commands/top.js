@@ -101,6 +101,7 @@ async function topCommand(options) {
   
   // Build output (simple flat format, compatible with other commands)
   const output = {
+    fileType: 'highlights-top',
     generatedAt: new Date().toISOString(),
     sourceFile: path.basename(highlightsPath),
     topCount: topHighlights.length,

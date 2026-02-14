@@ -174,7 +174,8 @@ node src/index.js record --hlae "D:\HLAE\hlae.exe" --csgo "D:\Games\CS-GO"
 | `--quality <preset>` | No | `medium` | Encoding quality preset (see below) |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID (for debugging) |
-| `--voice-chat` | No | - | Enable voice chat and text chat in recordings |
+| `--hud` | No | - | Record with HUD, chat, voice |
+| `--voice` | No | - | Record with voice but without HUD (double-pass) |
 
 #### Quality Presets
 
@@ -195,7 +196,9 @@ node src/index.js record --quality draft
 node src/index.js record --quality high
 ```
 
-**Note about `--voice-chat`**: This flag enables voice and text chat from both teams, but due to CS:GO limitations, it also shows the full spectator HUD (player panels, radar, etc.). There is no way to show only chat without the rest of the HUD in demo playback mode.
+**Note about `--hud`**: This flag enables voice and text chat from both teams, but due to CS:GO limitations, it also shows the full spectator HUD (player panels, radar, etc.). There is no way to show only chat without the rest of the HUD in demo playback mode.
+
+**Note about `--voice`**: This flag performs a double-pass recording to get voice audio without HUD. Pass 1 records with HUD enabled (to capture voice audio, TGA frames are discarded). Pass 2 records clean video without HUD. The voice audio from Pass 1 is then combined with the clean video from Pass 2. This takes approximately 2x the recording time but produces clean clips with voice. Cannot be used together with `--hud`.
 
 ### `postprocess-ui`
 
@@ -257,7 +260,7 @@ Settings automatically applied during recording:
 | **X-Ray** | Disabled (spec_show_xray 0) |
 | **Overlays** | Disabled (net_graph 0, cl_showfps 0) |
 | **Music** | Muted (all music volumes set to 0) |
-| **Voice** | Muted by default (use `--voice-chat` to enable, but shows full HUD) |
+| **Voice** | Muted by default (use `--hud` to enable with HUD, or `--voice` for voice without HUD) |
 | **Graphics** | High quality (HDR, postprocessing enabled) |
 | **Tracers** | Enabled (r_drawtracers_firstperson 1) |
 

@@ -77,6 +77,16 @@ export const RECORDING = Object.freeze({
 });
 
 /**
+ * Minimal recording settings for audio-only pass (--voice double-pass mode)
+ * Low resolution and framerate since only audio.wav is kept, TGA frames are discarded
+ */
+export const RECORDING_AUDIO_ONLY = Object.freeze({
+  width: 640,
+  height: 360,
+  framerate: 30,
+});
+
+/**
  * Recording quality presets
  * Trade-off between quality and encoding speed
  */

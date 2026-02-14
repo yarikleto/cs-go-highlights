@@ -127,6 +127,7 @@ function findDemoFiles(demosPath) {
  */
 function createResultsStructure() {
   return {
+    fileType: 'highlights',
     generatedAt: new Date().toISOString(),
     config: DEFAULT_CONFIG,
     demos: [],

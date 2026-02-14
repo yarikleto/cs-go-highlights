@@ -6,6 +6,7 @@ import { dirname } from 'path';
 import { parseTime } from './music.js';
 import {
   RECORDING,
+  RECORDING_AUDIO_ONLY,
   ENCODING,
   TIMING,
   SLOWMO,
@@ -95,6 +96,14 @@ const DEFAULT_SETTINGS = {
   crf: ENCODING.crf.postprocess,
 };
 
+// Settings for audio-only pass (uses centralized config)
+const AUDIO_ONLY_SETTINGS = {
+  width: RECORDING_AUDIO_ONLY.width,
+  height: RECORDING_AUDIO_ONLY.height,
+  framerate: RECORDING_AUDIO_ONLY.framerate,
+  crf: ENCODING.crf.postprocess,
+};
+
 /**
  * Records a single highlight using HLAE
  * @param {Object} options Recording options
@@ -107,7 +116,7 @@ const DEFAULT_SETTINGS = {
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, quality, voiceChat } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, quality, voiceChat, voiceNoHud, keepVoice } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -120,6 +129,33 @@ async function recordHighlight(options) {
   const clipFolder = path.join(outputPath, 'clips', clipName);
   const clipOutputPath = path.join(outputPath, 'clips', `${clipName}.mp4`);
   
+  // CS:GO cfg folder (shared between passes)
+  const csgoCfgFolder = path.join(csgoPath, 'csgo', 'cfg');
+  if (!fs.existsSync(csgoCfgFolder)) {
+    fs.mkdirSync(csgoCfgFolder, { recursive: true });
+  }
+
+  // VDM path: same as demo but with .vdm extension
+  const vdmPath = demoPath.replace(/\.dem$/i, '.vdm');
+
+  // Backup existing VDM if present
+  let existingVdm = null;
+  if (fs.existsSync(vdmPath)) {
+    existingVdm = fs.readFileSync(vdmPath);
+  }
+
+  // If --voice (double-pass mode), do two recordings
+  if (voiceNoHud) {
+    return await recordHighlightDoublePass({
+      hlaePath, csgoPath, demoPath, highlight,
+      clipName, clipFolder, clipOutputPath,
+      csgoCfgFolder, vdmPath, existingVdm,
+      quality, keepVoice,
+    });
+  }
+  
+  // --- Single-pass recording (normal or --voice-chat) ---
+
   // Create clip folder for TGA/WAV output
   if (!fs.existsSync(clipFolder)) {
     fs.mkdirSync(clipFolder, { recursive: true });
@@ -136,15 +172,7 @@ async function recordHighlight(options) {
   
   // CFG filename (just the name, no path)
   const cfgFileName = `hlae_record_${clipName}.cfg`;
-  
-  // Copy CFG to CS:GO cfg folder so exec command can find it
-  const csgoCfgFolder = path.join(csgoPath, 'csgo', 'cfg');
   const cfgInGamePath = path.join(csgoCfgFolder, cfgFileName);
-  
-  // Ensure CS:GO cfg folder exists
-  if (!fs.existsSync(csgoCfgFolder)) {
-    fs.mkdirSync(csgoCfgFolder, { recursive: true });
-  }
   
   // Write CFG file to CS:GO cfg folder
   fs.writeFileSync(cfgInGamePath, cfgContent);
@@ -157,15 +185,6 @@ async function recordHighlight(options) {
     clipFolder,
     cfgFileName,
   });
-  
-  // VDM path: same as demo but with .vdm extension
-  const vdmPath = demoPath.replace(/\.dem$/i, '.vdm');
-  
-  // Backup existing VDM if present
-  let existingVdm = null;
-  if (fs.existsSync(vdmPath)) {
-    existingVdm = fs.readFileSync(vdmPath);
-  }
   
   // Write VDM file
   fs.writeFileSync(vdmPath, vdmContent);
@@ -228,6 +247,203 @@ async function recordHighlight(options) {
   cleanupTgaFiles(clipFolder);
   
   // Recording complete - post-processing is now a separate step
+  return clipOutputPath;
+}
+
+/**
+ * Double-pass recording: Pass 1 captures voice audio (with HUD), Pass 2 records clean video (no HUD).
+ * The voice audio from Pass 1 replaces the game-only audio in Pass 2 before encoding.
+ * 
+ * @param {Object} options Recording options
+ * @returns {Promise<string>} Path to the recorded clip
+ */
+async function recordHighlightDoublePass(options) {
+  const {
+    hlaePath, csgoPath, demoPath, highlight,
+    clipName, clipFolder, clipOutputPath,
+    csgoCfgFolder, vdmPath, existingVdm,
+    quality, keepVoice,
+  } = options;
+
+  const cfgFileName = `hlae_record_${clipName}.cfg`;
+  const cfgInGamePath = path.join(csgoCfgFolder, cfgFileName);
+
+  // Register cleanup callbacks for SIGINT handling
+  const cleanupTempFiles = () => {
+    try {
+      if (fs.existsSync(cfgInGamePath)) fs.unlinkSync(cfgInGamePath);
+    } catch (e) { /* ignore */ }
+    try {
+      if (existingVdm) {
+        fs.writeFileSync(vdmPath, existingVdm);
+      } else if (fs.existsSync(vdmPath)) {
+        fs.unlinkSync(vdmPath);
+      }
+    } catch (e) { /* ignore */ }
+  };
+  cleanupCallbacks.push(cleanupTempFiles);
+
+  // Path to save voice audio between passes
+  const savedVoiceAudio = path.join(clipFolder, 'voice_audio.wav');
+
+  try {
+    // =========================================================================
+    // PASS 1: Record with HUD + voice (only audio matters)
+    // =========================================================================
+    console.log(`    [PASS 1/2] Recording voice audio (with HUD)...`);
+
+    // Create clip folder
+    if (!fs.existsSync(clipFolder)) {
+      fs.mkdirSync(clipFolder, { recursive: true });
+    }
+
+    // Generate CFG with voiceChat=true at minimal resolution (only audio matters)
+    const pass1Cfg = generateRecordingCfg({
+      highlight,
+      clipFolder,
+      clipName,
+      settings: AUDIO_ONLY_SETTINGS,
+      voiceChat: true,
+    });
+    fs.writeFileSync(cfgInGamePath, pass1Cfg);
+
+    // Generate VDM
+    const pass1Vdm = generateVdmFile({ highlight, clipFolder, cfgFileName });
+    fs.writeFileSync(vdmPath, pass1Vdm);
+
+    console.log(`    [PASS 1/2] Launching HLAE + CS:GO (voice pass, ${highlight.playback.durationSeconds}s, 640x360)...`);
+
+    await launchHlaeRecording({
+      hlaePath, csgoPath, demoPath,
+      cfgFileName, highlight,
+      settings: AUDIO_ONLY_SETTINGS,
+    });
+
+    console.log(`    [PASS 1/2] Voice recording completed`);
+
+    // Extract audio.wav from the take folder
+    const pass1TakeFolder = path.join(clipFolder, 'take0000');
+    const pass1AudioFile = path.join(pass1TakeFolder, 'audio.wav');
+
+    if (!fs.existsSync(pass1AudioFile)) {
+      throw new Error('Pass 1 failed: no audio.wav found in take folder. Voice audio could not be captured.');
+    }
+
+    // Save voice audio to a safe location
+    fs.copyFileSync(pass1AudioFile, savedVoiceAudio);
+    console.log(`    [PASS 1/2] Voice audio saved (${(fs.statSync(savedVoiceAudio).size / 1024 / 1024).toFixed(1)} MB)`);
+
+    // Delete Pass 1 take folder (TGA frames are not needed)
+    fs.rmSync(pass1TakeFolder, { recursive: true, force: true });
+    console.log(`    [PASS 1/2] TGA frames discarded`);
+
+    // =========================================================================
+    // PASS 2: Record clean video without HUD
+    // =========================================================================
+    console.log(`    [PASS 2/2] Recording clean video (no HUD)...`);
+
+    // Generate CFG with voiceChat=false (clean recording)
+    const pass2Cfg = generateRecordingCfg({
+      highlight,
+      clipFolder,
+      clipName,
+      settings: DEFAULT_SETTINGS,
+      voiceChat: false,
+    });
+    fs.writeFileSync(cfgInGamePath, pass2Cfg);
+
+    // Generate VDM (same settings, new recording)
+    const pass2Vdm = generateVdmFile({ highlight, clipFolder, cfgFileName });
+    fs.writeFileSync(vdmPath, pass2Vdm);
+
+    console.log(`    [PASS 2/2] Launching HLAE + CS:GO (clean pass, ${highlight.playback.durationSeconds}s)...`);
+
+    await launchHlaeRecording({
+      hlaePath, csgoPath, demoPath,
+      cfgFileName, highlight,
+    });
+
+    console.log(`    [PASS 2/2] Clean recording completed`);
+
+    const pass2TakeFolder = path.join(clipFolder, 'take0000');
+    const pass2AudioFile = path.join(pass2TakeFolder, 'audio.wav');
+
+    if (keepVoice) {
+      // Keep original game audio for the main clip, save voice version separately
+      console.log(`    [PASS 2/2] Keeping game audio for main clip, voice audio saved separately`);
+    } else {
+      // Overwrite the game-only audio.wav with the voice audio
+      fs.copyFileSync(savedVoiceAudio, pass2AudioFile);
+      console.log(`    [PASS 2/2] Audio replaced with voice track from Pass 1`);
+    }
+
+  } finally {
+    // Remove from cleanup callbacks
+    const idx = cleanupCallbacks.indexOf(cleanupTempFiles);
+    if (idx !== -1) cleanupCallbacks.splice(idx, 1);
+
+    // Clean up temp files (CFG, VDM)
+    cleanupTempFiles();
+  }
+
+  // =========================================================================
+  // Encode: TGA frames (clean) + audio → final MP4
+  // =========================================================================
+  const crf = quality?.crf || 18;
+  const preset = quality?.preset || 'medium';
+
+  if (keepVoice) {
+    // Encode main clip with game audio (no voice)
+    console.log(`    [ENCODE] Encoding main clip to MP4 (CRF ${crf}, ${preset} preset)...`);
+    await encodeTgaToMp4({
+      inputFolder: clipFolder,
+      clipName,
+      outputPath: clipOutputPath,
+      framerate: DEFAULT_SETTINGS.framerate,
+      crf,
+      preset,
+    });
+    console.log(`    [ENCODE] Main clip: ${clipName}.mp4`);
+
+    // Now replace audio with voice and encode voice version
+    const pass2TakeFolder = path.join(clipFolder, 'take0000');
+    const pass2AudioFile = path.join(pass2TakeFolder, 'audio.wav');
+    fs.copyFileSync(savedVoiceAudio, pass2AudioFile);
+
+    const voiceOutputPath = clipOutputPath.replace('.mp4', '_voice.mp4');
+    console.log(`    [ENCODE] Encoding voice clip to MP4...`);
+    await encodeTgaToMp4({
+      inputFolder: clipFolder,
+      clipName: `${clipName}_voice`,
+      outputPath: voiceOutputPath,
+      framerate: DEFAULT_SETTINGS.framerate,
+      crf,
+      preset,
+    });
+    console.log(`    [ENCODE] Voice clip: ${clipName}_voice.mp4`);
+
+    // Clean up saved voice audio
+    try { fs.unlinkSync(savedVoiceAudio); } catch (e) { /* ignore */ }
+  } else {
+    // Single encode: clean video + voice audio (already replaced)
+    console.log(`    [ENCODE] Encoding to MP4 (CRF ${crf}, ${preset} preset)...`);
+    await encodeTgaToMp4({
+      inputFolder: clipFolder,
+      clipName,
+      outputPath: clipOutputPath,
+      framerate: DEFAULT_SETTINGS.framerate,
+      crf,
+      preset,
+    });
+    console.log(`    [ENCODE] Completed: ${clipName}.mp4`);
+
+    // Clean up saved voice audio
+    try { fs.unlinkSync(savedVoiceAudio); } catch (e) { /* ignore */ }
+  }
+
+  // Clean up TGA/WAV files
+  cleanupTgaFiles(clipFolder);
+
   return clipOutputPath;
 }
 
@@ -1074,9 +1290,11 @@ echo "=== VDM file will control playback and recording ==="
 
 /**
  * Launches HLAE with CS:GO to record the highlight
+ * @param {Object} options.settings Optional settings override (width, height) for HLAE launch
  */
 function launchHlaeRecording(options) {
-  const { hlaePath, csgoPath, demoPath, cfgFileName, highlight } = options;
+  const { hlaePath, csgoPath, demoPath, cfgFileName, highlight, settings } = options;
+  const launchSettings = settings || DEFAULT_SETTINGS;
   
   return new Promise((resolve, reject) => {
     // Build HLAE launch arguments
@@ -1088,8 +1306,8 @@ function launchHlaeRecording(options) {
       '-autoStart',
       '-csgoExe', path.join(csgoPath, 'csgo.exe'),
       '-gfxEnabled', 'true',
-      '-gfxWidth', String(DEFAULT_SETTINGS.width),
-      '-gfxHeight', String(DEFAULT_SETTINGS.height),
+      '-gfxWidth', String(launchSettings.width),
+      '-gfxHeight', String(launchSettings.height),
       '-gfxFull', 'false',
       // Use forward slashes for CS:GO console compatibility
       '-customLaunchOptions', `-novid -console +playdemo "${demoPath.replace(/\\/g, '/')}"`,
@@ -1495,7 +1713,7 @@ function cleanupTgaFiles(folder) {
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, quality, playerFilter, idFilter, voiceChat } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, quality, playerFilter, idFilter, voiceChat, voiceNoHud, keepVoice, force } = options;
   
   const recordedClips = [];
   const clipsFolder = path.join(outputPath, 'clips');
@@ -1540,15 +1758,27 @@ async function recordAllHighlights(options) {
     return true;
   });
   
-  // Filter out already recorded highlights
-  const toRecord = allHighlights.filter(h => !existingClipIds.has(h.id));
-  const skipped = allHighlights.length - toRecord.length;
-  
-  if (skipped > 0) {
-    console.log(`Skipping ${skipped} already recorded highlights`);
+  // Filter out already recorded highlights (--force skips this check)
+  let toRecord;
+  if (force) {
+    toRecord = allHighlights;
+    const existing = allHighlights.filter(h => existingClipIds.has(h.id)).length;
+    if (existing > 0) {
+      console.log(`Overwriting ${existing} existing clips (--force)`);
+    }
+  } else {
+    toRecord = allHighlights.filter(h => !existingClipIds.has(h.id));
+    const skipped = allHighlights.length - toRecord.length;
+    if (skipped > 0) {
+      console.log(`Skipping ${skipped} already recorded highlights`);
+    }
   }
   
-  console.log(`\nRecording ${toRecord.length} highlights...\n`);
+  if (voiceNoHud) {
+    console.log(`\nRecording ${toRecord.length} highlights (double-pass: voice without HUD)...\n`);
+  } else {
+    console.log(`\nRecording ${toRecord.length} highlights...\n`);
+  }
   
   for (let i = 0; i < toRecord.length; i++) {
     const highlight = toRecord[i];
@@ -1577,6 +1807,8 @@ async function recordAllHighlights(options) {
         clipIndex,
         quality,
         voiceChat,
+        voiceNoHud,
+        keepVoice,
       });
       
       recordedClips.push(clipPath);

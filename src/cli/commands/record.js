@@ -28,6 +28,17 @@ async function recordCommand(options) {
   const playerFilter = options.player || null;
   const idFilter = options.id || null;
   const voiceChat = options.voiceChat || false;
+  const voiceNoHud = options.voice || false;
+  const keepVoice = options.keepVoice || false;
+  const force = options.force || false;
+
+  // Validate mutually exclusive options
+  if (voiceChat && voiceNoHud) {
+    console.error('Error: --voice-chat and --voice are mutually exclusive.');
+    console.error('  --voice-chat: records with HUD, chat, and voice (single pass)');
+    console.error('  --voice: records voice audio without HUD (double pass)');
+    process.exit(1);
+  }
   
   // Validate quality preset
   const qualityPreset = options.quality || RECORDING_QUALITY.default;
@@ -64,6 +75,7 @@ async function recordCommand(options) {
     quality,
     playerFilter,
     idFilter,
+    voiceNoHud,
   });
 
   // Ensure output directory
@@ -81,6 +93,9 @@ async function recordCommand(options) {
       playerFilter,
       idFilter,
       voiceChat,
+      voiceNoHud,
+      keepVoice,
+      force,
     });
 
     if (recordedClips.length === 0) {
@@ -142,8 +157,10 @@ function printRecordSummary(params) {
   console.log(`CS:GO path: ${params.csgoPath}`);
   console.log(`Output folder: ${params.outputPath}`);
   console.log(`Quality: ${params.qualityPreset} (CRF ${params.quality.crf}, ${params.quality.preset})`);
+  if (params.voiceNoHud) console.log(`Voice mode: double-pass (voice audio without HUD)`);
   console.log(`Total highlights to record: ${params.totalHighlights}`);
-  console.log(`Estimated time: ~${formatDuration(params.estimatedSeconds)}`);
+  const timeEstimate = params.voiceNoHud ? params.estimatedSeconds * 2 : params.estimatedSeconds;
+  console.log(`Estimated time: ~${formatDuration(timeEstimate)}${params.voiceNoHud ? ' (2x for double-pass)' : ''}`);
   if (params.playerFilter) console.log(`Filtering by player: ${params.playerFilter}`);
   if (params.idFilter) console.log(`Filtering by ID: ${params.idFilter}`);
 }

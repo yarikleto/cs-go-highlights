@@ -1,0 +1,609 @@
+[
+  {
+    "id": "analyze-v2",
+    "name": "Analyze V2",
+    "description": "Parse demo files and detect highlights (no points, with extended metadata)",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "demos",
+        "label": "Demos Folder",
+        "type": "folder",
+        "required": true,
+        "default": "./demos",
+        "description": "Path to folder containing .dem files"
+      },
+      {
+        "name": "output",
+        "label": "Output Folder",
+        "type": "folder",
+        "default": "./output",
+        "description": "Output folder for highlights.json"
+      },
+      {
+        "name": "solo-kills-file",
+        "label": "Solo Kills File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "description": "Optional JSON file with manual solo kill ticks"
+      }
+    ]
+  },
+  {
+    "id": "analyze-postprocess-ui",
+    "name": "Analyze Postprocess UI",
+    "description": "Calculate playback boundaries, speedup segments, and slowmo triggers",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "highlights",
+        "label": "Highlights File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "default": "./output/highlights.json",
+        "description": "Path to highlights.json from analyze-v2"
+      },
+      {
+        "name": "output",
+        "label": "Output File",
+        "type": "text",
+        "default": "./output/highlights_postprocess.json",
+        "description": "Output file path"
+      }
+    ]
+  },
+  {
+    "id": "analyze",
+    "name": "Analyze (Legacy)",
+    "description": "Original analyzer with points calculation and music mapping",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "demos",
+        "label": "Demos Folder",
+        "type": "folder",
+        "required": true,
+        "default": "./demos"
+      },
+      {
+        "name": "output",
+        "label": "Output Folder",
+        "type": "folder",
+        "default": "./output"
+      },
+      {
+        "name": "reset-music",
+        "label": "Reset Music Mapping",
+        "type": "boolean",
+        "default": false,
+        "description": "Discard existing music offsets"
+      },
+      {
+        "name": "solo-kills-file",
+        "label": "Solo Kills File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] }
+      }
+    ]
+  },
+  {
+    "id": "record",
+    "name": "Record",
+    "description": "Record highlights using HLAE (produces raw video clips)",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "highlights",
+        "label": "Highlights File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "default": "./output/highlights.json"
+      },
+      {
+        "name": "demos",
+        "label": "Demos Folder",
+        "type": "folder",
+        "default": "./demos"
+      },
+      {
+        "name": "hlae",
+        "label": "HLAE Path",
+        "type": "file",
+        "filters": { "name": "Executable", "extensions": ["exe"] },
+        "default": "C:\\Program Files (x86)\\HLAE\\hlae.exe"
+      },
+      {
+        "name": "csgo",
+        "label": "CS:GO Folder",
+        "type": "folder",
+        "default": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive"
+      },
+      {
+        "name": "output",
+        "label": "Output Folder",
+        "type": "folder",
+        "default": "./output"
+      },
+      {
+        "name": "quality",
+        "label": "Quality Preset",
+        "type": "select",
+        "choices": [
+          { "value": "high", "label": "High (slow)" },
+          { "value": "medium", "label": "Medium (balanced)" },
+          { "value": "fast", "label": "Fast" },
+          { "value": "draft", "label": "Draft (preview)" }
+        ],
+        "default": "medium"
+      },
+      {
+        "name": "player",
+        "label": "Filter by Player (Steam ID)",
+        "type": "text",
+        "description": "Only record highlights for this player"
+      },
+      {
+        "name": "id",
+        "label": "Highlight ID",
+        "type": "text",
+        "description": "Record only this specific highlight"
+      },
+      {
+        "name": "voice-chat",
+        "label": "Record with HUD, chat, voice",
+        "type": "boolean",
+        "default": false,
+        "excludes": ["voice"]
+      },
+      {
+        "name": "voice",
+        "label": "Record with voice (no HUD)",
+        "type": "boolean",
+        "default": false,
+        "description": "Double-pass: record voice audio separately, then clean video without HUD",
+        "excludes": ["voice-chat"]
+      },
+      {
+        "name": "keep-voice",
+        "label": "Keep voice file separately",
+        "type": "boolean",
+        "default": false,
+        "description": "Save voice audio as a separate file next to the clip (e.g. clip_voice.mp4)",
+        "requiresOption": "voice"
+      },
+      {
+        "name": "force",
+        "label": "Force Re-record",
+        "type": "boolean",
+        "default": false,
+        "description": "Overwrite existing clips instead of skipping them"
+      }
+    ]
+  },
+  {
+    "id": "postprocess-ui",
+    "name": "Postprocess UI",
+    "description": "Apply visual effects to recorded clips (slowmo, speedup, overlay)",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "highlights",
+        "label": "Highlights File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "default": "./output/highlights.json"
+      },
+      {
+        "name": "clips",
+        "label": "Clips Folder",
+        "type": "folder",
+        "default": "./output/clips"
+      },
+      {
+        "name": "output",
+        "label": "Output Folder",
+        "type": "folder",
+        "default": "./output/clips_processed"
+      },
+      {
+        "name": "speedup",
+        "label": "Speedup Multiplier",
+        "type": "number",
+        "default": 3,
+        "min": 1,
+        "max": 10
+      },
+      {
+        "name": "slowmo",
+        "label": "Slowmo Factor",
+        "type": "number",
+        "default": 0.6,
+        "min": 0.1,
+        "max": 1,
+        "step": 0.1
+      },
+      {
+        "name": "overlay",
+        "label": "Show Overlay",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "name": "force",
+        "label": "Force Re-process",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "name": "id",
+        "label": "Highlight ID",
+        "type": "text",
+        "description": "Process only this specific highlight"
+      }
+    ]
+  },
+  {
+    "id": "postprocess-sound",
+    "name": "Postprocess Sound",
+    "description": "Apply background music to processed clips",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "highlights",
+        "label": "Highlights File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "default": "./output/highlights.json"
+      },
+      {
+        "name": "clips",
+        "label": "Processed Clips Folder",
+        "type": "folder",
+        "default": "./output/clips_processed"
+      },
+      {
+        "name": "output",
+        "label": "Output Folder",
+        "type": "folder",
+        "default": "./output/clips_final"
+      },
+      {
+        "name": "music",
+        "label": "Music Folder",
+        "type": "folder",
+        "default": "./music"
+      },
+      {
+        "name": "music-volume",
+        "label": "Music Volume (%)",
+        "type": "number",
+        "default": 60,
+        "min": 0,
+        "max": 100
+      },
+      {
+        "name": "force",
+        "label": "Force Re-apply",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "name": "id",
+        "label": "Highlight ID",
+        "type": "text",
+        "description": "Apply music only to this specific highlight"
+      }
+    ]
+  },
+  {
+    "id": "merge",
+    "name": "Merge",
+    "description": "Merge clips into a single video file",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "clips",
+        "label": "Clips Folder",
+        "type": "folder",
+        "required": true
+      },
+      {
+        "name": "output",
+        "label": "Output File",
+        "type": "text",
+        "default": "./output/highlights_final.mp4"
+      },
+      {
+        "name": "transition",
+        "label": "Transition Duration (s)",
+        "type": "number",
+        "default": 0.5,
+        "min": 0,
+        "max": 3,
+        "step": 0.1
+      },
+      {
+        "name": "cleanup",
+        "label": "Delete Clips After Merge",
+        "type": "boolean",
+        "default": false
+      }
+    ]
+  },
+  {
+    "id": "top",
+    "name": "Top Highlights",
+    "description": "Select top N highlights by impressiveness score",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "highlights",
+        "label": "Highlights File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "default": "./output/highlights.json"
+      },
+      {
+        "name": "count",
+        "label": "Number of Highlights",
+        "type": "number",
+        "default": 10,
+        "min": 1,
+        "max": 100
+      },
+      {
+        "name": "output",
+        "label": "Output File",
+        "type": "text",
+        "default": "./output/highlights_top.json"
+      },
+      {
+        "name": "show-scores",
+        "label": "Show Score Breakdown",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "name": "asc",
+        "label": "Sort Ascending",
+        "type": "boolean",
+        "default": false,
+        "description": "Sort by lowest score first (default: highest first)"
+      },
+      {
+        "name": "player",
+        "label": "Filter by Player",
+        "type": "text",
+        "description": "Filter by player Steam ID"
+      },
+      {
+        "name": "type",
+        "label": "Filter by Type",
+        "type": "select",
+        "choices": [
+          { "value": "", "label": "All" },
+          { "value": "kill-series", "label": "Kill Series" },
+          { "value": "clutch", "label": "Clutch" },
+          { "value": "collateral", "label": "Collateral" },
+          { "value": "knife", "label": "Knife" },
+          { "value": "one-tap", "label": "One Tap" }
+        ],
+        "default": ""
+      },
+      {
+        "name": "min-kills",
+        "label": "Minimum Kills",
+        "type": "number",
+        "min": 1
+      },
+      {
+        "name": "unique-players",
+        "label": "Max per Player",
+        "type": "number",
+        "default": 1,
+        "min": 1,
+        "description": "Limit highlights per player for variety"
+      }
+    ]
+  },
+  {
+    "id": "players",
+    "name": "List Players",
+    "description": "List all players (names and Steam IDs) from a demo file",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "demo",
+        "label": "Demo File",
+        "type": "file",
+        "filters": { "name": "Demo", "extensions": ["dem"] },
+        "required": true
+      },
+      {
+        "name": "output",
+        "label": "Save to JSON",
+        "type": "text",
+        "description": "Optional: save player list to JSON file"
+      }
+    ]
+  },
+  {
+    "id": "player-kills",
+    "name": "Player Kills",
+    "description": "Show all kills by a player in a demo file",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "demo",
+        "label": "Demo File",
+        "type": "file",
+        "filters": { "name": "Demo", "extensions": ["dem"] },
+        "required": true
+      },
+      {
+        "name": "steamid",
+        "label": "Steam ID (64-bit)",
+        "type": "text",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "compress",
+    "name": "Compress",
+    "description": "Compress a video file to reduce size",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "input",
+        "label": "Input Video",
+        "type": "file",
+        "filters": { "name": "Video", "extensions": ["mp4", "avi", "mkv"] },
+        "required": true
+      },
+      {
+        "name": "output",
+        "label": "Output File",
+        "type": "text",
+        "description": "Leave empty for auto-naming"
+      },
+      {
+        "name": "power",
+        "label": "Compression Power (1-10)",
+        "type": "number",
+        "default": 5,
+        "min": 1,
+        "max": 10
+      }
+    ]
+  },
+  {
+    "id": "timestamps",
+    "name": "Timestamps",
+    "description": "Generate highlight timestamps list for video description",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "highlights",
+        "label": "Highlights File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "default": "./output/highlights.json"
+      },
+      {
+        "name": "output",
+        "label": "Output File",
+        "type": "text",
+        "default": "./output/timestamps.txt"
+      },
+      {
+        "name": "speedup",
+        "label": "Speedup Multiplier",
+        "type": "number",
+        "default": 3
+      },
+      {
+        "name": "slowmo",
+        "label": "Slowmo Factor",
+        "type": "number",
+        "default": 0.6
+      }
+    ]
+  },
+  {
+    "id": "resync-music",
+    "name": "Resync Music",
+    "description": "Recalculate music timing from manual offset values",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "mapping",
+        "label": "Music Mapping File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "default": "./output/music-mapping.json"
+      }
+    ]
+  },
+  {
+    "id": "merge-music",
+    "name": "Merge Music",
+    "description": "Merge all songs in music folder into one file",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "music",
+        "label": "Music Folder",
+        "type": "folder",
+        "default": "./music"
+      },
+      {
+        "name": "output",
+        "label": "Output File",
+        "type": "text",
+        "description": "Leave empty for auto-naming"
+      }
+    ]
+  },
+  {
+    "id": "apply-music",
+    "name": "Apply Music (Timeline)",
+    "description": "Apply music to clips based on music-timeline.json from Music Editor",
+    "category": "Pipeline",
+    "options": [
+      {
+        "name": "mapping",
+        "label": "Timeline Mapping File",
+        "type": "file",
+        "filters": { "name": "JSON", "extensions": ["json"] },
+        "required": true,
+        "default": "./output/music-timeline.json",
+        "description": "Path to music-timeline.json from Music Editor"
+      },
+      {
+        "name": "clips",
+        "label": "Clips Folder (override)",
+        "type": "folder",
+        "description": "Override clips folder from timeline"
+      },
+      {
+        "name": "output",
+        "label": "Output Folder",
+        "type": "folder",
+        "default": "./output/clips_with_music",
+        "description": "Output folder for clips with music"
+      },
+      {
+        "name": "music-volume",
+        "label": "Music Volume (%)",
+        "type": "number",
+        "default": 70,
+        "min": 0,
+        "max": 100
+      },
+      {
+        "name": "game-volume",
+        "label": "Game Volume (%)",
+        "type": "number",
+        "default": 100,
+        "min": 0,
+        "max": 100
+      },
+      {
+        "name": "fade-duration",
+        "label": "Fade Duration (s)",
+        "type": "number",
+        "default": 2,
+        "min": 0,
+        "max": 10
+      },
+      {
+        "name": "force",
+        "label": "Force Re-apply",
+        "type": "boolean",
+        "default": false,
+        "description": "Re-apply music even if already exists"
+      }
+    ]
+  }
+]

@@ -132,6 +132,7 @@ function createResultsStructure() {
   };
   
   return {
+    fileType: 'highlights',
     generatedAt: new Date().toISOString(),
     version: 2,  // Mark as V2 format
     config: configV2,

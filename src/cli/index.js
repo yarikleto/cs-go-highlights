@@ -20,6 +20,9 @@
  * - timestamps   - Generate highlight timestamps list
  * - top          - Select top N highlights by impressiveness score
  * 
+ * Commands are registered from the shared config (src/shared/commandsConfig.js)
+ * which is also used by the Electron UI.
+ * 
  * @example
  * # Full pipeline
  * node src/index.js analyze --demos ./demos
@@ -41,20 +44,13 @@ import {
   mergeCommand,
   compressCommand,
   playerKillsCommand,
+  playersCommand,
   mergeMusicCommand,
   timestampsCommand,
   topCommand,
+  applyMusicCommand,
 } from './commands/index.js';
-import {
-  PATHS,
-  SPEEDUP,
-  SLOWMO,
-  MUSIC,
-  ENCODING,
-  MERGE,
-  RECORDING_QUALITY,
-  TOP_COMMAND,
-} from '../config.js';
+import { registerAllCommands } from './registerCommands.js';
 
 // CLI metadata
 program
@@ -62,141 +58,27 @@ program
   .description('CLI tool for CS:GO demo highlights')
   .version('1.0.0');
 
-/*
- * =============================================================================
- * MAIN PIPELINE COMMANDS
- * =============================================================================
- */
+// Action handlers map
+const actions = {
+  analyzeCommand,
+  analyzeV2Command,
+  analyzePostprocessUICommand,
+  resyncMusicCommand,
+  recordCommand,
+  postprocessUICommand,
+  postprocessSoundCommand,
+  mergeCommand,
+  compressCommand,
+  playerKillsCommand,
+  playersCommand,
+  mergeMusicCommand,
+  timestampsCommand,
+  topCommand,
+  applyMusicCommand,
+};
 
-program
-  .command('analyze')
-  .description('Analyze demo files and detect highlights')
-  .option('--demos <path>', 'Path to folder with .dem files', PATHS.demos)
-  .option('--output <path>', 'Output folder for highlights.json', PATHS.output)
-  .option('--reset-music', 'Reset music mapping (discard existing offsets)')
-  .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
-  .action(analyzeCommand);
-
-program
-  .command('analyze-v2')
-  .description('Analyze demo files V2 (no points, with flick/airborne metadata)')
-  .option('--demos <path>', 'Path to folder with .dem files', PATHS.demos)
-  .option('--output <path>', 'Output folder for highlights.json', PATHS.output)
-  .option('--solo-kills-file <path>', 'Path to JSON file with solo kills mapping')
-  .action(analyzeV2Command);
-
-program
-  .command('analyze-postprocess-ui')
-  .description('Calculate playback/speedup/slowmo for highlights (run after analyze-v2)')
-  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--output <path>', 'Output file path', './output/highlights_postprocess.json')
-  .action(analyzePostprocessUICommand);
-
-program
-  .command('record')
-  .description('Record highlights using HLAE (produces raw clips without effects)')
-  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--demos <path>', 'Path to folder with .dem files', PATHS.demos)
-  .option('--hlae <path>', 'Path to HLAE executable (hlae.exe)', PATHS.hlae)
-  .option('--csgo <path>', 'Path to CS:GO installation folder', PATHS.csgo)
-  .option('--output <path>', 'Output folder for clips', PATHS.output)
-  .option('--quality <preset>', 'Encoding quality: high, medium, fast, draft', RECORDING_QUALITY.default)
-  .option('--player <steamId>', 'Filter highlights by player Steam ID')
-  .option('--id <highlightId>', 'Record only a specific highlight by ID (for debugging)')
-  .option('--voice-chat', 'Enable voice chat and text chat in recordings')
-  .action(recordCommand);
-
-program
-  .command('postprocess-ui')
-  .description('Apply visual effects to recorded clips (slowmo, speedup, overlay)')
-  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--clips <path>', 'Path to folder containing raw clips', PATHS.clips)
-  .option('--output <path>', 'Output folder for processed clips', PATHS.clipsProcessed)
-  .option('--speedup <multiplier>', `Speed up clutch gaps (default: ${SPEEDUP.defaultMultiplier}x)`, parseFloat, SPEEDUP.defaultMultiplier)
-  .option('--overlay', 'Show player name and highlight type overlay (fade in/out)', true)
-  .option('--slowmo <factor>', `Slow motion on last kill if headshot/noscope (default: ${SLOWMO.defaultFactor})`, parseFloat, SLOWMO.defaultFactor)
-  .option('--force', 'Re-process all clips even if already processed')
-  .option('--id <highlightId>', 'Process only a specific highlight by ID')
-  .action(postprocessUICommand);
-
-program
-  .command('postprocess-sound')
-  .description('Apply music to processed clips (separate step for fast music fine-tuning)')
-  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--clips <path>', 'Path to processed clips folder', PATHS.clipsProcessed)
-  .option('--output <path>', 'Output folder for clips with music', PATHS.clipsFinal)
-  .option('--music <folder>', 'Path to music folder', MUSIC.defaultFolder)
-  .option('--music-volume <percent>', `Music volume 0-100 (default: ${MUSIC.defaultMusicVolumePercent})`, parseFloat, MUSIC.defaultMusicVolumePercent)
-  .option('--force', 'Re-apply music even if already applied')
-  .option('--id <highlightId>', 'Apply music only to a specific highlight by ID')
-  .action(postprocessSoundCommand);
-
-program
-  .command('merge')
-  .description('Merge recorded clips into a single video using FFmpeg')
-  .requiredOption('--clips <path>', 'Path to folder containing clip files (.mp4)')
-  .option('--output <path>', 'Output path for final video', PATHS.highlightsFinal)
-  .option('--cleanup', 'Delete individual clips after merging')
-  .option('--transition <duration>', `Crossfade transition duration in seconds (default: ${MERGE.transition.duration})`, parseFloat, MERGE.transition.enabled ? MERGE.transition.duration : undefined)
-  .option('--no-transition', 'Disable transitions between clips')
-  .action(mergeCommand);
-
-/*
- * =============================================================================
- * UTILITY COMMANDS
- * =============================================================================
- */
-
-program
-  .command('compress')
-  .description('Compress a video file to reduce file size')
-  .requiredOption('--input <path>', 'Path to input video file')
-  .option('--power <level>', `Compression power 1-10 (1=light, 10=maximum)`, (val) => parseInt(val, 10), ENCODING.defaultCompressionPower)
-  .option('--output <path>', 'Output path for compressed video')
-  .action(compressCommand);
-
-program
-  .command('player-kills')
-  .description('Show all kills by a player in a demo file')
-  .requiredOption('--demo <path>', 'Path to demo file (.dem)')
-  .requiredOption('--steamid <id>', 'Player Steam ID (64-bit format)')
-  .action(playerKillsCommand);
-
-program
-  .command('merge-music')
-  .description('Merge all songs in music folder into one file')
-  .option('--music <folder>', 'Path to music folder', MUSIC.defaultFolder)
-  .option('--output <path>', 'Output path for merged song (default: named after first song)')
-  .action(mergeMusicCommand);
-
-program
-  .command('resync-music')
-  .description('Recalculate music startTime/endTime based on manual offset values in music-mapping.json')
-  .option('--mapping <path>', 'Path to music-mapping.json', PATHS.musicMapping)
-  .action(resyncMusicCommand);
-
-program
-  .command('timestamps')
-  .description('Generate a list of highlight timestamps (after speedup/slowmo) with type, map, and player')
-  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--output <path>', 'Output file path for timestamps', PATHS.timestamps)
-  .option('--speedup <multiplier>', `Speedup multiplier used in postprocess (default: ${SPEEDUP.defaultMultiplier})`, parseFloat, SPEEDUP.defaultMultiplier)
-  .option('--slowmo <factor>', `Slowmo factor used in postprocess (default: ${SLOWMO.defaultFactor})`, parseFloat, SLOWMO.defaultFactor)
-  .action(timestampsCommand);
-
-program
-  .command('top')
-  .description('Select top N highlights by impressiveness score')
-  .option('--highlights <path>', 'Path to highlights.json file', PATHS.highlights)
-  .option('--count <n>', 'Number of top highlights to select', (val) => parseInt(val, 10), TOP_COMMAND.count)
-  .option('--output <path>', 'Output file path for top highlights', PATHS.highlightsTop)
-  .option('--asc', 'Sort ascending (lowest score first, default: descending)')
-  .option('--show-scores', 'Print detailed score breakdown to console')
-  .option('--player <steamId>', 'Filter by player Steam ID')
-  .option('--type <type>', 'Filter by highlight type (kill-series, clutch, etc.)')
-  .option('--min-kills <n>', 'Minimum kill count', (val) => parseInt(val, 10))
-  .option('--unique-players <n>', 'Max highlights per player (for variety)', (val) => parseInt(val, 10), TOP_COMMAND.uniquePlayers)
-  .action(topCommand);
+// Register all commands from shared config
+registerAllCommands(program, actions);
 
 // Parse CLI arguments
 program.parse(process.argv);

@@ -96,6 +96,7 @@ async function analyzePostprocessUICommand(options) {
   }
   
   // Update metadata
+  data.fileType = 'highlights-postprocess';
   data.postprocessedAt = new Date().toISOString();
   
   // Write output
