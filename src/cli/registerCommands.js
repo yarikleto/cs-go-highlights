@@ -10,6 +10,7 @@ import { COMMANDS } from '../shared/commandsConfig.js';
  * Map command ID to action handler
  */
 const ACTION_MAP = {
+  'extract': 'extractCommand',
   'analyze': 'analyzeCommand',
   'analyze-v2': 'analyzeV2Command',
   'analyze-postprocess-ui': 'analyzePostprocessUICommand',

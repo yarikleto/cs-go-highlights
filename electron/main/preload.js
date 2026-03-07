@@ -32,6 +32,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Commands metadata
   getCommands: () => ipcRenderer.invoke('get-commands'),
 
+  // Flows
+  getFlows: () => ipcRenderer.invoke('get-flows'),
+  runFlow: (flowId, params) => ipcRenderer.invoke('run-flow', flowId, params),
+  stopFlow: () => ipcRenderer.invoke('stop-flow'),
+  onFlowStepStart: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('flow-step-start', subscription);
+    return () => ipcRenderer.removeListener('flow-step-start', subscription);
+  },
+  onFlowOutput: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('flow-output', subscription);
+    return () => ipcRenderer.removeListener('flow-output', subscription);
+  },
+  onFlowStepComplete: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('flow-step-complete', subscription);
+    return () => ipcRenderer.removeListener('flow-step-complete', subscription);
+  },
+  onFlowComplete: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('flow-complete', subscription);
+    return () => ipcRenderer.removeListener('flow-complete', subscription);
+  },
+
   // App info
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
 

@@ -1,0 +1,30 @@
+{
+  "paths": {
+    "demos": "./demos",
+    "output": "./output",
+    "hlae": "C:\\Program Files (x86)\\HLAE\\hlae.exe",
+    "csgo": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive"
+  },
+  "detection": {
+    "maxDelay": 15,
+    "minSeriesKills": 3,
+    "minEnemies": 2
+  },
+  "padding": {
+    "before": 4,
+    "after": 5
+  },
+  "speedup": {
+    "startDelay": 2,
+    "bufferAroundKills": 2,
+    "minGapDuration": 4
+  },
+  "slowmo": {
+    "duration": 1,
+    "factor": 0.6
+  },
+  "postprocess": {
+    "speedupMultiplier": 2,
+    "showOverlay": true
+  }
+}

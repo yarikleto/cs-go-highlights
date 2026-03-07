@@ -34,6 +34,7 @@ import {
   Sync as SyncIcon,
   Visibility as ViewerIcon,
   QueueMusic as QueueMusicIcon,
+  RocketLaunch as FlowIcon,
 } from '@mui/icons-material';
 
 const DRAWER_WIDTH = 280;
@@ -60,13 +61,15 @@ function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [commands, setCommands] = useState([]);
+  const [flows, setFlows] = useState([]);
+  const [flowsOpen, setFlowsOpen] = useState(true);
   const [pipelineOpen, setPipelineOpen] = useState(true);
   const [utilityOpen, setUtilityOpen] = useState(true);
 
   useEffect(() => {
-    // Load commands from main process
     if (window.electronAPI) {
       window.electronAPI.getCommands().then(setCommands);
+      window.electronAPI.getFlows().then(setFlows);
     }
   }, []);
 
@@ -75,6 +78,7 @@ function Layout({ children }) {
 
   const isActive = (path) => location.pathname === path;
   const isCommandActive = (commandId) => location.pathname === `/command/${commandId}`;
+  const isFlowActive = (flowId) => location.pathname === `/flow/${flowId}`;
 
   const CommandIcon = ({ commandId }) => {
     const Icon = COMMAND_ICONS[commandId] || BuildIcon;
@@ -149,6 +153,38 @@ function Layout({ children }) {
           </ListItem>
 
           <Divider sx={{ my: 1 }} />
+
+          {/* Flows */}
+          <ListItem disablePadding>
+            <ListItemButton onClick={() => setFlowsOpen(!flowsOpen)}>
+              <ListItemIcon>
+                <FlowIcon />
+              </ListItemIcon>
+              <ListItemText primary="Flows" />
+              {flowsOpen ? <ExpandLess /> : <ExpandMore />}
+            </ListItemButton>
+          </ListItem>
+          <Collapse in={flowsOpen} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding>
+              {flows.map((flow) => (
+                <ListItem key={flow.id} disablePadding>
+                  <ListItemButton
+                    sx={{ pl: 4 }}
+                    selected={isFlowActive(flow.id)}
+                    onClick={() => navigate(`/flow/${flow.id}`)}
+                  >
+                    <ListItemIcon>
+                      <FlowIcon />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={flow.name}
+                      primaryTypographyProps={{ fontSize: '0.9rem' }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Collapse>
 
           {/* Pipeline Commands */}
           <ListItem disablePadding>

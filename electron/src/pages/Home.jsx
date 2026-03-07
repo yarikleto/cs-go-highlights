@@ -16,15 +16,18 @@ import {
   Analytics as AnalyticsIcon,
   Movie as MovieIcon,
   Speed as SpeedIcon,
+  RocketLaunch as FlowIcon,
 } from '@mui/icons-material';
 
 function Home() {
   const navigate = useNavigate();
   const [commands, setCommands] = useState([]);
+  const [flows, setFlows] = useState([]);
 
   useEffect(() => {
     if (window.electronAPI) {
       window.electronAPI.getCommands().then(setCommands);
+      window.electronAPI.getFlows().then(setFlows);
     }
   }, []);
 
@@ -80,6 +83,63 @@ function Home() {
           Automatically detect and render impressive gameplay moments from demo files.
         </Typography>
       </Box>
+
+      {/* Flows */}
+      {flows.length > 0 && (
+        <Box sx={{ mb: 4 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <FlowIcon color="secondary" />
+            <Typography variant="h5">Flows</Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Pre-configured pipelines that run multiple commands in sequence.
+          </Typography>
+
+          <Grid container spacing={2}>
+            {flows.map((flow) => (
+              <Grid item xs={12} sm={6} md={4} key={flow.id}>
+                <Card
+                  sx={{
+                    height: '100%',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: 4,
+                    },
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                  }}
+                >
+                  <CardActionArea
+                    onClick={() => navigate(`/flow/${flow.id}`)}
+                    sx={{ height: '100%', p: 1 }}
+                  >
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <FlowIcon color="secondary" fontSize="small" />
+                        <Typography variant="h6">
+                          {flow.name}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        {flow.description}
+                      </Typography>
+                      <Chip
+                        label={`${flow.steps?.length || 0} steps`}
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                      />
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      )}
+
+      <Divider sx={{ my: 4 }} />
 
       {/* Quick Start Pipeline */}
       <Box sx={{ mb: 4 }}>

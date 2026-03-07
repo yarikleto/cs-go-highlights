@@ -2,8 +2,8 @@ const { ipcMain, dialog, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { runCommand, stopCommand } = require('./commandRunner');
-const { COMMANDS } = require('./commands');
+const { runCommand, stopCommand, runFlow, stopFlow } = require('./commandRunner');
+const { COMMANDS, FLOWS } = require('./commands');
 
 /**
  * Get media duration using ffprobe
@@ -86,6 +86,42 @@ function setupIPC() {
   // Stop running command
   ipcMain.handle('stop-command', () => {
     return stopCommand();
+  });
+
+  // Get available flows
+  ipcMain.handle('get-flows', () => {
+    return FLOWS;
+  });
+
+  // Run a flow
+  ipcMain.handle('run-flow', (event, flowId, params) => {
+    const flow = FLOWS.find(f => f.id === flowId);
+    if (!flow) {
+      return { started: false, error: `Flow "${flowId}" not found` };
+    }
+
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const send = (channel, data) => {
+      if (window && !window.isDestroyed()) {
+        window.webContents.send(channel, data);
+      }
+    };
+
+    runFlow(
+      flow.steps,
+      params,
+      (data) => send('flow-step-start', data),
+      (data) => send('flow-output', data),
+      (data) => send('flow-step-complete', data),
+      (data) => send('flow-complete', data),
+    );
+
+    return { started: true };
+  });
+
+  // Stop running flow
+  ipcMain.handle('stop-flow', () => {
+    return stopFlow();
   });
 
   // Select folder dialog

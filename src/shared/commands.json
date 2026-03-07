@@ -1,5 +1,28 @@
 [
   {
+    "id": "extract",
+    "name": "Extract Demos",
+    "description": "Recursively extract .dem files from an archive (zip/rar) into a flat folder",
+    "category": "Utility",
+    "options": [
+      {
+        "name": "archive",
+        "label": "Archive File",
+        "type": "file",
+        "filters": { "name": "Archive", "extensions": ["zip", "rar"] },
+        "required": true,
+        "description": "Path to archive containing demo files"
+      },
+      {
+        "name": "output",
+        "label": "Output Folder",
+        "type": "folder",
+        "default": "./demos",
+        "description": "Folder where .dem files will be placed (flat structure)"
+      }
+    ]
+  },
+  {
     "id": "analyze-v2",
     "name": "Analyze V2",
     "description": "Parse demo files and detect highlights (no points, with extended metadata)",

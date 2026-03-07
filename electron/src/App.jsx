@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import CommandPage from './pages/CommandPage';
+import FlowPage from './pages/FlowPage';
 import GlobalConfig from './pages/GlobalConfig';
 import HighlightsViewer from './pages/HighlightsViewer';
 import MusicEditor from './pages/MusicEditor';
@@ -13,6 +14,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/command/:commandId" element={<CommandPage />} />
+        <Route path="/flow/:flowId" element={<FlowPage />} />
         <Route path="/config" element={<GlobalConfig />} />
         <Route path="/viewer" element={<HighlightsViewer />} />
         <Route path="/music-editor" element={<MusicEditor />} />

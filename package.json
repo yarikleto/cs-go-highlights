@@ -9,13 +9,21 @@
   },
   "scripts": {
     "start": "node src/index.js",
+    "dev": "npm run dev --prefix electron",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["csgo", "highlights", "demo", "parser"],
+  "keywords": [
+    "csgo",
+    "highlights",
+    "demo",
+    "parser"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "commander": "^14.0.2",
-    "demofile": "^2.10.0"
+    "demofile": "^2.10.0",
+    "node-unrar-js": "^2.0.2"
   }
 }

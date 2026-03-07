@@ -1,0 +1,82 @@
+[
+  {
+    "id": "full-legacy-pipeline",
+    "name": "Full Legacy Pipeline",
+    "description": "End-to-end pipeline that takes a demo archive and produces a compressed highlight video. Uses the legacy analyzer with point-based scoring, picks the top 20 highlights (ascending sort, max 3 per player), records with HUD/chat/voice enabled, applies visual postprocessing at 2x speedup with overlay, merges into a single video, and compresses the result. Ideal for quick one-click highlight reels from a batch of demos.",
+    "params": [
+      {
+        "name": "archive",
+        "label": "Archive File",
+        "type": "file",
+        "filters": { "name": "Archive", "extensions": ["zip", "rar"] },
+        "required": true,
+        "description": "Path to zip/rar archive containing .dem files"
+      }
+    ],
+    "steps": [
+      {
+        "name": "Clean directories",
+        "type": "clean-dirs",
+        "dirs": ["./demos", "./output"]
+      },
+      {
+        "name": "Extract Demos",
+        "command": "extract",
+        "options": {
+          "archive": "$archive",
+          "output": "./demos"
+        }
+      },
+      {
+        "name": "Analyze (Legacy)",
+        "command": "analyze",
+        "options": {
+          "demos": "./demos",
+          "output": "./output"
+        }
+      },
+      {
+        "name": "Top Highlights",
+        "command": "top",
+        "options": {
+          "highlights": "./output/highlights.json",
+          "count": 20,
+          "asc": true,
+          "unique-players": 3,
+          "output": "./output/highlights_top.json"
+        }
+      },
+      {
+        "name": "Record",
+        "command": "record",
+        "options": {
+          "highlights": "./output/highlights_top.json",
+          "voice-chat": true
+        }
+      },
+      {
+        "name": "Postprocess UI",
+        "command": "postprocess-ui",
+        "options": {
+          "highlights": "./output/highlights_top.json",
+          "speedup": 2,
+          "overlay": true
+        }
+      },
+      {
+        "name": "Merge",
+        "command": "merge",
+        "options": {
+          "clips": "./output/clips_processed"
+        }
+      },
+      {
+        "name": "Compress",
+        "command": "compress",
+        "options": {
+          "input": "./output/highlights_final.mp4"
+        }
+      }
+    ]
+  }
+]

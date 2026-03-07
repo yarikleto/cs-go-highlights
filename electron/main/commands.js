@@ -16,29 +16,25 @@
 const path = require('path');
 const fs = require('fs');
 
-// Try to load from shared config
-function loadCommands() {
-  // In development: relative path from electron/main/ to src/shared/
-  const devPath = path.resolve(__dirname, '../../src/shared/commands.json');
-  
-  // In production (packaged): resources/src/shared/commands.json
-  const prodPath = path.resolve(process.resourcesPath || '', 'src/shared/commands.json');
-  
+function loadJsonConfig(filename) {
+  const devPath = path.resolve(__dirname, '../../src/shared/', filename);
+  const prodPath = path.resolve(process.resourcesPath || '', 'src/shared/', filename);
+
   let configPath = devPath;
   if (!fs.existsSync(devPath) && fs.existsSync(prodPath)) {
     configPath = prodPath;
   }
-  
+
   try {
     const data = fs.readFileSync(configPath, 'utf8');
     return JSON.parse(data);
   } catch (err) {
-    console.error('Failed to load commands config:', err.message);
-    console.error('Tried paths:', devPath, prodPath);
+    console.error(`Failed to load ${filename}:`, err.message);
     return [];
   }
 }
 
-const COMMANDS = loadCommands();
+const COMMANDS = loadJsonConfig('commands.json');
+const FLOWS = loadJsonConfig('flows.json');
 
-module.exports = { COMMANDS };
+module.exports = { COMMANDS, FLOWS };

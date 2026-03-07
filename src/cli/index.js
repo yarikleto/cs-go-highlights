@@ -34,6 +34,7 @@
 
 import { program } from 'commander';
 import {
+  extractCommand,
   analyzeCommand,
   analyzeV2Command,
   analyzePostprocessUICommand,
@@ -60,6 +61,7 @@ program
 
 // Action handlers map
 const actions = {
+  extractCommand,
   analyzeCommand,
   analyzeV2Command,
   analyzePostprocessUICommand,

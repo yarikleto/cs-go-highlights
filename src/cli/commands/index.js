@@ -2,6 +2,7 @@
  * @fileoverview Command handlers barrel export
  */
 
+export * from './extract.js';
 export * from './analyze.js';
 export * from './analyzeV2.js';
 export * from './analyzePostprocessUI.js';
