@@ -181,6 +181,7 @@ async function processSingleDemo(demoFile, fileName, soloTicks) {
 
   return {
     file: fileName,
+    map: demoData.header.mapName,
     tickRate: demoData.tickRate,
     highlights,
   };

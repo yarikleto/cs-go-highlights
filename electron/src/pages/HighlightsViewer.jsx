@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -11,6 +11,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   Chip,
   IconButton,
   InputAdornment,
@@ -28,6 +29,7 @@ import {
   ExpandLess as CollapseIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
+import { useViewerContext } from '../context/ViewerContext';
 
 const TYPE_COLORS = {
   'kill-series': 'primary',
@@ -38,18 +40,21 @@ const TYPE_COLORS = {
 };
 
 function HighlightsViewer() {
-  const [filePath, setFilePath] = useState('./output/highlights.json');
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const {
+    filePath, setFilePath,
+    data, setData,
+    error, setError,
+    typeFilter, setTypeFilter,
+    playerFilter, setPlayerFilter,
+    demoFilter, setDemoFilter,
+    mapFilter, setMapFilter,
+    sortBy, setSortBy,
+    sortDir, setSortDir,
+    expandedRows, setExpandedRows,
+    clearFilters,
+  } = useViewerContext();
+
   const [loading, setLoading] = useState(false);
-  
-  // Filters
-  const [typeFilter, setTypeFilter] = useState('');
-  const [playerFilter, setPlayerFilter] = useState('');
-  const [demoFilter, setDemoFilter] = useState('');
-  
-  // Expanded rows
-  const [expandedRows, setExpandedRows] = useState({});
 
   const loadFile = async () => {
     if (!filePath) return;
@@ -99,6 +104,11 @@ function HighlightsViewer() {
 
   const fileType = data ? getFileType() : null;
 
+  const extractMapFromFilename = (filename) => {
+    const match = filename?.match(/de_[a-z0-9_]+/i);
+    return match ? match[0] : null;
+  };
+
   // Get all highlights from different formats
   const getAllHighlights = () => {
     if (!data) return [];
@@ -112,18 +122,19 @@ function HighlightsViewer() {
         highlights.push({
           ...h,
           demoFile: h.demoFile,
-          map: h.map,
+          map: h.map || extractMapFromFilename(h.demoFile),
         });
       });
     }
     // Format with demos[].highlights[] (highlights, postprocess)
     else if (data.demos && Array.isArray(data.demos)) {
       data.demos.forEach(demo => {
+        const demoMap = demo.map || extractMapFromFilename(demo.file);
         demo.highlights?.forEach(h => {
           highlights.push({
             ...h,
             demoFile: demo.file || h.demoFile,
-            map: demo.map,
+            map: h.map || demoMap || extractMapFromFilename(h.demoFile),
           });
         });
       });
@@ -150,6 +161,9 @@ function HighlightsViewer() {
         h.demoFile?.toLowerCase().includes(demoFilter.toLowerCase())
       );
     }
+    if (mapFilter) {
+      highlights = highlights.filter(h => h.map === mapFilter);
+    }
     
     return highlights;
   };
@@ -157,10 +171,49 @@ function HighlightsViewer() {
   // Get unique values for filters
   const getUniqueTypes = () => {
     const types = new Set(getAllHighlights().map(h => h.type));
-    return Array.from(types);
+    return Array.from(types).sort();
   };
 
-  const filteredHighlights = getFilteredHighlights();
+  const getUniqueMaps = () => {
+    const maps = new Set(getAllHighlights().map(h => h.map).filter(Boolean));
+    return Array.from(maps).sort();
+  };
+
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortDir('asc');
+    }
+  };
+
+  const getSortValue = (h, column) => {
+    switch (column) {
+      case 'rank': return h.rank ?? Infinity;
+      case 'type': return h.type || '';
+      case 'player': return h.player?.name?.toLowerCase() || '';
+      case 'kills': return h.killCount || h.kills?.length || 0;
+      case 'points': return h.points || 0;
+      case 'duration': return h.durationSeconds || 0;
+      case 'map': return h.map || '';
+      case 'demo': return h.demoFile || '';
+      case 'tick': return h.startTick || 0;
+      default: return 0;
+    }
+  };
+
+  const sortHighlights = (highlights) => {
+    if (!sortBy) return highlights;
+    return [...highlights].sort((a, b) => {
+      const va = getSortValue(a, sortBy);
+      const vb = getSortValue(b, sortBy);
+      const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  };
+
+  const filteredHighlights = sortHighlights(getFilteredHighlights());
 
   const formatDuration = (seconds) => {
     if (!seconds) return '-';
@@ -290,6 +343,21 @@ function HighlightsViewer() {
               placeholder="Name or Steam ID"
             />
             
+            <FormControl sx={{ minWidth: 150 }}>
+              <InputLabel>Map</InputLabel>
+              <Select
+                value={mapFilter}
+                label="Map"
+                onChange={(e) => setMapFilter(e.target.value)}
+                size="small"
+              >
+                <MenuItem value="">All</MenuItem>
+                {getUniqueMaps().map(map => (
+                  <MenuItem key={map} value={map}>{map}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
             <TextField
               label="Demo"
               value={demoFilter}
@@ -301,11 +369,7 @@ function HighlightsViewer() {
             <Button 
               variant="outlined" 
               size="small"
-              onClick={() => {
-                setTypeFilter('');
-                setPlayerFilter('');
-                setDemoFilter('');
-              }}
+              onClick={clearFilters}
             >
               Clear
             </Button>
@@ -320,14 +384,55 @@ function HighlightsViewer() {
             <TableHead>
               <TableRow>
                 <TableCell width={40}></TableCell>
-                {filteredHighlights.some(h => h.rank) && <TableCell>Rank</TableCell>}
-                <TableCell>Type</TableCell>
-                <TableCell>Player</TableCell>
-                <TableCell>Kills</TableCell>
-                {filteredHighlights.some(h => h.points) && <TableCell>Points</TableCell>}
-                <TableCell>Duration</TableCell>
-                <TableCell>Demo</TableCell>
-                <TableCell>Tick</TableCell>
+                {filteredHighlights.some(h => h.rank) && (
+                  <TableCell sortDirection={sortBy === 'rank' ? sortDir : false}>
+                    <TableSortLabel active={sortBy === 'rank'} direction={sortBy === 'rank' ? sortDir : 'asc'} onClick={() => handleSort('rank')}>
+                      Rank
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                <TableCell sortDirection={sortBy === 'type' ? sortDir : false}>
+                  <TableSortLabel active={sortBy === 'type'} direction={sortBy === 'type' ? sortDir : 'asc'} onClick={() => handleSort('type')}>
+                    Type
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell sortDirection={sortBy === 'player' ? sortDir : false}>
+                  <TableSortLabel active={sortBy === 'player'} direction={sortBy === 'player' ? sortDir : 'asc'} onClick={() => handleSort('player')}>
+                    Player
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell sortDirection={sortBy === 'kills' ? sortDir : false}>
+                  <TableSortLabel active={sortBy === 'kills'} direction={sortBy === 'kills' ? sortDir : 'asc'} onClick={() => handleSort('kills')}>
+                    Kills
+                  </TableSortLabel>
+                </TableCell>
+                {filteredHighlights.some(h => h.points) && (
+                  <TableCell sortDirection={sortBy === 'points' ? sortDir : false}>
+                    <TableSortLabel active={sortBy === 'points'} direction={sortBy === 'points' ? sortDir : 'asc'} onClick={() => handleSort('points')}>
+                      Points
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                <TableCell sortDirection={sortBy === 'duration' ? sortDir : false}>
+                  <TableSortLabel active={sortBy === 'duration'} direction={sortBy === 'duration' ? sortDir : 'asc'} onClick={() => handleSort('duration')}>
+                    Duration
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell sortDirection={sortBy === 'map' ? sortDir : false}>
+                  <TableSortLabel active={sortBy === 'map'} direction={sortBy === 'map' ? sortDir : 'asc'} onClick={() => handleSort('map')}>
+                    Map
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell sortDirection={sortBy === 'demo' ? sortDir : false}>
+                  <TableSortLabel active={sortBy === 'demo'} direction={sortBy === 'demo' ? sortDir : 'asc'} onClick={() => handleSort('demo')}>
+                    Demo
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell sortDirection={sortBy === 'tick' ? sortDir : false}>
+                  <TableSortLabel active={sortBy === 'tick'} direction={sortBy === 'tick' ? sortDir : 'asc'} onClick={() => handleSort('tick')}>
+                    Tick
+                  </TableSortLabel>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -367,6 +472,9 @@ function HighlightsViewer() {
                       </TableCell>
                     )}
                     <TableCell>{formatDuration(h.durationSeconds)}</TableCell>
+                    <TableCell>
+                      <Chip label={h.map || '?'} size="small" variant="outlined" />
+                    </TableCell>
                     <TableCell>
                       <Typography variant="caption" sx={{ 
                         maxWidth: 200, 

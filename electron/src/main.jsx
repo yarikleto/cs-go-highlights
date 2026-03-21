@@ -4,6 +4,7 @@ import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { HashRouter } from 'react-router-dom';
 import App from './App';
 import { CommandProvider } from './context/CommandContext';
+import { ViewerProvider } from './context/ViewerContext';
 
 const darkTheme = createTheme({
   palette: {
@@ -38,9 +39,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
       <CommandProvider>
-        <HashRouter>
-          <App />
-        </HashRouter>
+        <ViewerProvider>
+          <HashRouter>
+            <App />
+          </HashRouter>
+        </ViewerProvider>
       </CommandProvider>
     </ThemeProvider>
   </React.StrictMode>

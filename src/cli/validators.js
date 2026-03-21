@@ -141,8 +141,8 @@ function getHighlights(data) {
       for (const highlight of demo.highlights) {
         highlights.push({
           ...highlight,
-          // Add demo info if not already present
           demoFile: highlight.demoFile || demo.file,
+          map: highlight.map || demo.map,
           tickRate: highlight.tickRate || demo.tickRate,
         });
       }
