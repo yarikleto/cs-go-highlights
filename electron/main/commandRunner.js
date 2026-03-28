@@ -115,7 +115,9 @@ function resolveOptions(options, params) {
   for (const [key, value] of Object.entries(options)) {
     if (typeof value === 'string' && value.startsWith('$')) {
       const paramName = value.slice(1);
-      resolved[key] = params[paramName] ?? value;
+      const paramValue = params[paramName];
+      if (paramValue === undefined || paramValue === '') continue;
+      resolved[key] = paramValue;
     } else {
       resolved[key] = value;
     }

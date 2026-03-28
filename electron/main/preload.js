@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Dialog APIs
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters) => ipcRenderer.invoke('select-file', filters),
+  selectSaveFile: (filters) => ipcRenderer.invoke('select-save-file', filters),
   selectAudioFiles: () => ipcRenderer.invoke('select-audio-files'),
 
   // Config APIs
