@@ -20,6 +20,7 @@ import {
   PlayArrow as PlayIcon,
   Stop as StopIcon,
   InsertDriveFile as FileIcon,
+  SaveAlt as SaveIcon,
   Clear as ClearIcon,
   CheckCircle as DoneIcon,
   Error as ErrorIcon,
@@ -99,6 +100,11 @@ function FlowPage() {
     if (path) handleParamChange(name, path);
   };
 
+  const handleSelectSaveFile = async (name, filters) => {
+    const path = await window.electronAPI.selectSaveFile(filters);
+    if (path) handleParamChange(name, path);
+  };
+
   const handleRun = async () => {
     setLogs([]);
     setResult(null);
@@ -145,6 +151,29 @@ function FlowPage() {
               <InputAdornment position="end">
                 <IconButton onClick={() => handleSelectFile(param.name, param.filters)}>
                   <FileIcon />
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
+      );
+    }
+
+    if (param.type === 'save-file') {
+      return (
+        <TextField
+          key={param.name}
+          label={param.label || param.name}
+          value={value}
+          onChange={(e) => handleParamChange(param.name, e.target.value)}
+          fullWidth
+          required={param.required}
+          helperText={param.description}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton onClick={() => handleSelectSaveFile(param.name, param.filters)}>
+                  <SaveIcon />
                 </IconButton>
               </InputAdornment>
             ),

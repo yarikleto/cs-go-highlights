@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, net } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -86,6 +86,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   // Handle local-media:// protocol — all reads via Buffer (no streams)
   protocol.handle('local-media', (request) => {
     const raw = request.url;

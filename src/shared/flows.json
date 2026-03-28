@@ -11,6 +11,14 @@
         "filters": { "name": "Archive", "extensions": ["zip", "rar"] },
         "required": true,
         "description": "Path to zip/rar archive containing .dem files"
+      },
+      {
+        "name": "outputPath",
+        "label": "Output Video",
+        "type": "save-file",
+        "filters": { "name": "Video", "extensions": ["mp4"] },
+        "required": false,
+        "description": "Where to save the final compressed video (defaults to ./output/highlights_final_compressed.mp4)"
       }
     ],
     "steps": [
@@ -74,7 +82,8 @@
         "name": "Compress",
         "command": "compress",
         "options": {
-          "input": "./output/highlights_final.mp4"
+          "input": "./output/highlights_final.mp4",
+          "output": "$outputPath"
         }
       }
     ]

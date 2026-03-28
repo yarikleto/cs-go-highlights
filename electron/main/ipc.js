@@ -137,6 +137,21 @@ function setupIPC() {
     return result.filePaths[0];
   });
 
+  // Save file dialog
+  ipcMain.handle('select-save-file', async (event, filters) => {
+    const dialogFilters = filters ? [filters] : [];
+
+    const result = await dialog.showSaveDialog({
+      filters: dialogFilters,
+    });
+
+    if (result.canceled) {
+      return null;
+    }
+
+    return result.filePath;
+  });
+
   // Select file dialog
   ipcMain.handle('select-file', async (event, filters) => {
     const dialogFilters = filters ? [filters] : [];
