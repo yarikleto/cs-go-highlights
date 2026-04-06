@@ -34,8 +34,20 @@ async function extractCommand(options) {
   }
 
   const ext = path.extname(archivePath).toLowerCase();
+
+  // Handle .dem files directly — just copy to output
+  if (ext === DEMO_EXTENSION) {
+    console.log(`Demo file: ${archivePath}`);
+    console.log(`Output:    ${outputPath}`);
+    fs.mkdirSync(outputPath, { recursive: true });
+    const destPath = path.join(outputPath, path.basename(archivePath));
+    fs.copyFileSync(archivePath, destPath);
+    console.log(`\nDone! Copied ${path.basename(archivePath)} to ${outputPath}`);
+    return;
+  }
+
   if (!SUPPORTED_ARCHIVES.has(ext)) {
-    console.error(`Error: Unsupported archive format "${ext}". Supported: ${[...SUPPORTED_ARCHIVES].join(', ')}`);
+    console.error(`Error: Unsupported format "${ext}". Supported: .dem, ${[...SUPPORTED_ARCHIVES].join(', ')}`);
     process.exit(1);
   }
 

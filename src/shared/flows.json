@@ -109,24 +109,25 @@
     "params": [
       {
         "name": "archive",
-        "label": "Archive or Demos Folder",
+        "label": "Demo or Archive",
         "type": "file",
         "filters": {
-          "name": "Archive",
+          "name": "Demo / Archive",
           "extensions": [
+            "dem",
             "zip",
             "rar"
           ]
         },
         "required": true,
-        "description": "Path to zip/rar archive containing .dem files"
+        "description": "Path to a .dem file or a zip/rar archive containing .dem files"
       },
       {
-        "name": "player",
-        "label": "Player Steam ID",
+        "name": "playerName",
+        "label": "Player Nickname",
         "type": "text",
         "required": true,
-        "description": "64-bit Steam ID of the player to filter highlights for"
+        "description": "In-game nickname of the player to filter highlights for (partial match, case-insensitive)"
       },
       {
         "name": "outputPath",
@@ -174,7 +175,7 @@
           "highlights": "./output/highlights.json",
           "count": 100,
           "asc": true,
-          "player": "$player",
+          "player-name": "$playerName",
           "unique-players": 100,
           "output": "./output/highlights_top.json"
         }
