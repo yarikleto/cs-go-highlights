@@ -2,6 +2,8 @@
   "name": "csgo-highlights-ui",
   "version": "1.0.0",
   "description": "Electron UI for CS:GO Highlights Tool",
+  "author": "Yarik Leto",
+  "license": "MIT",
   "main": "main/index.js",
   "scripts": {
     "dev": "concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
@@ -44,7 +46,9 @@
       {
         "from": "../src",
         "to": "cli/src",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../package.json",
@@ -55,11 +59,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
