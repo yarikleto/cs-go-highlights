@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  Automatically detect and record impressive gameplay moments from CS:GO/CS2 demo files.<br/>
+  Automatically detect and record impressive gameplay moments from CS:GO demo files.<br/>
   Drop your <code>.dem</code> files in, get a polished highlight video out — complete with speedup, slow motion, player overlays, and background music.
 </p>
 

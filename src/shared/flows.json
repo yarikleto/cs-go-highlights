@@ -2,7 +2,7 @@
   {
     "id": "full-legacy-pipeline",
     "name": "Full Legacy Pipeline",
-    "description": "End-to-end pipeline that takes a demo archive and produces a compressed highlight video. Uses the legacy analyzer with point-based scoring, picks the top 20 highlights (ascending sort, max 3 per player), records with HUD/chat/voice enabled, applies visual postprocessing at 2x speedup with overlay, merges into a single video, and compresses the result. Ideal for quick one-click highlight reels from a batch of demos.",
+    "description": "One-click highlight reel from a demo archive. Extracts demos, detects the top 20 highlights, records them with voice chat, adds speedup and overlays, merges into a single video, and compresses it. Just pick an archive and get a ready-to-share video.",
     "params": [
       {
         "name": "archive",
@@ -105,7 +105,7 @@
   {
     "id": "player-highlights-pipeline",
     "name": "Player Highlights (Low → High)",
-    "description": "Extract demos from an archive, analyze all highlights, filter by a specific player, sort from lowest to highest rating, and record everything. Produces individual clips sorted by impressiveness — great for a progression-style highlight reel.",
+    "description": "Build a highlight reel for one specific player, sorted from worst to best. Pick a demo or archive and enter a nickname -- the tool finds all their highlights, ranks them, and records a progression-style video showing how the plays get more impressive.",
     "params": [
       {
         "name": "archive",

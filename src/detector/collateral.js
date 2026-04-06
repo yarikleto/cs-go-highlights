@@ -21,7 +21,7 @@ import { createCollateralHighlight } from './highlightFactory.js';
  * 3. Create highlight for each qualifying group
  * 
  * Note: Same tick = same server frame = essentially same moment
- * In CS:GO/CS2, tick rate is typically 64-128, so same tick means < 16ms apart
+ * In CS:GO, tick rate is typically 64-128, so same tick means < 16ms apart
  * 
  * @param {Array} kills - All kill events from parser
  * @param {Object} [killPoints=KILL_POINTS] - Point configuration
