@@ -3,7 +3,7 @@
 /**
  * @fileoverview CS:GO Highlights CLI - Main entry point
  * 
- * This is a complete video production pipeline for CS:GO/CS2 highlights:
+ * This is a complete video production pipeline for CS:GO highlights:
  * 
  * Pipeline:
  * 1. analyze   - Parse demos, detect highlights, generate music mapping

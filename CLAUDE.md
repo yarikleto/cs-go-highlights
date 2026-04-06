@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CS:GO Highlights is a Node.js tool that parses CS:GO/CS2 demo files (`.dem`), detects impressive gameplay moments, and produces edited highlight videos. It has two interfaces: a CLI (`src/index.js`) and an Electron desktop app (`electron/`).
+CS:GO Highlights is a Node.js tool that parses CS:GO demo files (`.dem`), detects impressive gameplay moments, and produces edited highlight videos. It has two interfaces: a CLI (`src/index.js`) and an Electron desktop app (`electron/`).
 
 ## Commands
 

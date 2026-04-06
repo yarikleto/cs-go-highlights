@@ -2,7 +2,7 @@
   {
     "id": "extract",
     "name": "Extract Demos",
-    "description": "Recursively extract .dem files from an archive (zip/rar) into a flat folder",
+    "description": "Unpack .dem demo files from a zip or rar archive so they can be analyzed. Also accepts a single .dem file directly.",
     "category": "Utility",
     "options": [
       {
@@ -31,7 +31,7 @@
   {
     "id": "analyze-v2",
     "name": "Analyze V2",
-    "description": "Parse demo files and detect highlights (no points, with extended metadata)",
+    "description": "Scan demo files and detect impressive moments like aces, clutches, knife kills, and flick shots. Outputs raw highlight data with extended metadata (flick angles, airborne kills, equipment values).",
     "category": "Pipeline",
     "options": [
       {
@@ -66,7 +66,7 @@
   {
     "id": "analyze-postprocess-ui",
     "name": "Analyze Postprocess UI",
-    "description": "Calculate playback boundaries, speedup segments, and slowmo triggers",
+    "description": "Prepare highlights for recording by calculating where to start/stop playback, which parts to speed up, and where to apply slow motion. Run this after Analyze V2.",
     "category": "Pipeline",
     "options": [
       {
@@ -94,7 +94,7 @@
   {
     "id": "analyze",
     "name": "Analyze (Legacy)",
-    "description": "Original analyzer with points calculation and music mapping",
+    "description": "Scan demo files and detect highlights with automatic scoring and music mapping. This is the all-in-one analyzer used by the Full Legacy Pipeline -- it handles detection, scoring, and music assignment in a single step.",
     "category": "Pipeline",
     "options": [
       {
@@ -133,7 +133,7 @@
   {
     "id": "record",
     "name": "Record",
-    "description": "Record highlights using HLAE (produces raw video clips)",
+    "description": "Launch CS:GO via HLAE and automatically record each highlight as a video clip. The game is configured for clean recording (minimal HUD, locked camera, no overlays). Requires HLAE and CS:GO Legacy installed.",
     "category": "Pipeline",
     "options": [
       {
@@ -253,7 +253,7 @@
   {
     "id": "postprocess-ui",
     "name": "Postprocess UI",
-    "description": "Apply visual effects to recorded clips (slowmo, speedup, overlay)",
+    "description": "Add visual effects to recorded clips: speed up boring gaps between kills, apply slow motion on impressive headshots, and show a player name overlay. Original clips are never modified.",
     "category": "Pipeline",
     "options": [
       {
@@ -320,7 +320,7 @@
   {
     "id": "postprocess-sound",
     "name": "Postprocess Sound",
-    "description": "Apply background music to processed clips",
+    "description": "Add background music to your processed clips. Each clip gets a unique segment of music with fade in/out. Separate from visual postprocessing so you can fine-tune music without re-rendering effects.",
     "category": "Pipeline",
     "options": [
       {
@@ -378,7 +378,7 @@
   {
     "id": "merge",
     "name": "Merge",
-    "description": "Merge clips into a single video file",
+    "description": "Combine all individual highlight clips into one final video. Optionally add fade transitions between clips.",
     "category": "Pipeline",
     "options": [
       {
@@ -413,7 +413,7 @@
   {
     "id": "top",
     "name": "Top Highlights",
-    "description": "Select top N highlights by impressiveness score",
+    "description": "Pick the best highlights from a large set by ranking them with an impressiveness score. Filter by player, highlight type, or minimum kills. Great for building a \"best of\" compilation.",
     "category": "Utility",
     "options": [
       {
@@ -518,7 +518,7 @@
   {
     "id": "players",
     "name": "List Players",
-    "description": "List all players (names and Steam IDs) from a demo file",
+    "description": "Show all players who participated in a demo file with their nicknames and Steam IDs. Useful for finding the Steam ID you need for other commands.",
     "category": "Utility",
     "options": [
       {
@@ -544,7 +544,7 @@
   {
     "id": "player-kills",
     "name": "Player Kills",
-    "description": "Show all kills by a player in a demo file",
+    "description": "List every kill by a specific player in a demo -- tick, weapon, headshot, and time gap between kills. Useful for finding tick values to add as manual solo kill highlights.",
     "category": "Utility",
     "options": [
       {
@@ -570,7 +570,7 @@
   {
     "id": "compress",
     "name": "Compress",
-    "description": "Compress a video file to reduce size",
+    "description": "Reduce video file size using FFmpeg. Adjustable compression power from light (barely noticeable) to heavy (much smaller file). Great for sharing on Discord or social media.",
     "category": "Utility",
     "options": [
       {
@@ -606,7 +606,7 @@
   {
     "id": "timestamps",
     "name": "Timestamps",
-    "description": "Generate highlight timestamps list for video description",
+    "description": "Generate a timestamp list (e.g. \"00:00:17 | ACE | de_mirage | PlayerName\") for your final video. Copy-paste into a YouTube description to create chapter markers.",
     "category": "Utility",
     "options": [
       {
@@ -644,7 +644,7 @@
   {
     "id": "resync-music",
     "name": "Resync Music",
-    "description": "Recalculate music timing from manual offset values",
+    "description": "Recalculate music start/end times after you manually edit offsets in music-mapping.json. Use this when you want to skip a song intro or shift music timing for specific clips.",
     "category": "Utility",
     "options": [
       {
@@ -664,7 +664,7 @@
   {
     "id": "merge-music",
     "name": "Merge Music",
-    "description": "Merge all songs in music folder into one file",
+    "description": "Concatenate all audio files in a folder into a single track. Useful for preparing a continuous background music file from multiple songs.",
     "category": "Utility",
     "options": [
       {
@@ -684,7 +684,7 @@
   {
     "id": "apply-music",
     "name": "Apply Music (Timeline)",
-    "description": "Apply music to clips based on music-timeline.json from Music Editor",
+    "description": "Apply music to clips using the timeline you created in the Music Editor. Gives you precise control over which parts of each song play during each clip.",
     "category": "Pipeline",
     "options": [
       {
