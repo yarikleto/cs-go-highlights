@@ -9,7 +9,13 @@
         "name": "archive",
         "label": "Archive File",
         "type": "file",
-        "filters": { "name": "Archive", "extensions": ["zip", "rar"] },
+        "filters": {
+          "name": "Archive",
+          "extensions": [
+            "zip",
+            "rar"
+          ]
+        },
         "required": true,
         "description": "Path to archive containing demo files"
       },
@@ -47,7 +53,12 @@
         "name": "solo-kills-file",
         "label": "Solo Kills File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "description": "Optional JSON file with manual solo kill ticks"
       }
     ]
@@ -62,7 +73,12 @@
         "name": "highlights",
         "label": "Highlights File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "default": "./output/highlights.json",
         "description": "Path to highlights.json from analyze-v2"
       },
@@ -105,7 +121,12 @@
         "name": "solo-kills-file",
         "label": "Solo Kills File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] }
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        }
       }
     ]
   },
@@ -119,7 +140,12 @@
         "name": "highlights",
         "label": "Highlights File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "default": "./output/highlights.json"
       },
       {
@@ -132,7 +158,12 @@
         "name": "hlae",
         "label": "HLAE Path",
         "type": "file",
-        "filters": { "name": "Executable", "extensions": ["exe"] },
+        "filters": {
+          "name": "Executable",
+          "extensions": [
+            "exe"
+          ]
+        },
         "default": "C:\\Program Files (x86)\\HLAE\\hlae.exe"
       },
       {
@@ -152,10 +183,22 @@
         "label": "Quality Preset",
         "type": "select",
         "choices": [
-          { "value": "high", "label": "High (slow)" },
-          { "value": "medium", "label": "Medium (balanced)" },
-          { "value": "fast", "label": "Fast" },
-          { "value": "draft", "label": "Draft (preview)" }
+          {
+            "value": "high",
+            "label": "High (slow)"
+          },
+          {
+            "value": "medium",
+            "label": "Medium (balanced)"
+          },
+          {
+            "value": "fast",
+            "label": "Fast"
+          },
+          {
+            "value": "draft",
+            "label": "Draft (preview)"
+          }
         ],
         "default": "medium"
       },
@@ -176,7 +219,9 @@
         "label": "Record with HUD, chat, voice",
         "type": "boolean",
         "default": false,
-        "excludes": ["voice"]
+        "excludes": [
+          "voice"
+        ]
       },
       {
         "name": "voice",
@@ -184,7 +229,9 @@
         "type": "boolean",
         "default": false,
         "description": "Double-pass: record voice audio separately, then clean video without HUD",
-        "excludes": ["voice-chat"]
+        "excludes": [
+          "voice-chat"
+        ]
       },
       {
         "name": "keep-voice",
@@ -213,7 +260,12 @@
         "name": "highlights",
         "label": "Highlights File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "default": "./output/highlights.json"
       },
       {
@@ -275,7 +327,12 @@
         "name": "highlights",
         "label": "Highlights File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "default": "./output/highlights.json"
       },
       {
@@ -363,7 +420,12 @@
         "name": "highlights",
         "label": "Highlights File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "default": "./output/highlights.json"
       },
       {
@@ -395,21 +457,45 @@
       },
       {
         "name": "player",
-        "label": "Filter by Player",
+        "label": "Filter by Steam ID",
         "type": "text",
         "description": "Filter by player Steam ID"
+      },
+      {
+        "name": "player-name",
+        "label": "Filter by Nickname",
+        "type": "text",
+        "description": "Filter by player name (case-insensitive, partial match)"
       },
       {
         "name": "type",
         "label": "Filter by Type",
         "type": "select",
         "choices": [
-          { "value": "", "label": "All" },
-          { "value": "kill-series", "label": "Kill Series" },
-          { "value": "clutch", "label": "Clutch" },
-          { "value": "collateral", "label": "Collateral" },
-          { "value": "knife", "label": "Knife" },
-          { "value": "one-tap", "label": "One Tap" }
+          {
+            "value": "",
+            "label": "All"
+          },
+          {
+            "value": "kill-series",
+            "label": "Kill Series"
+          },
+          {
+            "value": "clutch",
+            "label": "Clutch"
+          },
+          {
+            "value": "collateral",
+            "label": "Collateral"
+          },
+          {
+            "value": "knife",
+            "label": "Knife"
+          },
+          {
+            "value": "one-tap",
+            "label": "One Tap"
+          }
         ],
         "default": ""
       },
@@ -439,7 +525,12 @@
         "name": "demo",
         "label": "Demo File",
         "type": "file",
-        "filters": { "name": "Demo", "extensions": ["dem"] },
+        "filters": {
+          "name": "Demo",
+          "extensions": [
+            "dem"
+          ]
+        },
         "required": true
       },
       {
@@ -460,7 +551,12 @@
         "name": "demo",
         "label": "Demo File",
         "type": "file",
-        "filters": { "name": "Demo", "extensions": ["dem"] },
+        "filters": {
+          "name": "Demo",
+          "extensions": [
+            "dem"
+          ]
+        },
         "required": true
       },
       {
@@ -481,7 +577,14 @@
         "name": "input",
         "label": "Input Video",
         "type": "file",
-        "filters": { "name": "Video", "extensions": ["mp4", "avi", "mkv"] },
+        "filters": {
+          "name": "Video",
+          "extensions": [
+            "mp4",
+            "avi",
+            "mkv"
+          ]
+        },
         "required": true
       },
       {
@@ -510,7 +613,12 @@
         "name": "highlights",
         "label": "Highlights File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "default": "./output/highlights.json"
       },
       {
@@ -543,7 +651,12 @@
         "name": "mapping",
         "label": "Music Mapping File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "default": "./output/music-mapping.json"
       }
     ]
@@ -578,7 +691,12 @@
         "name": "mapping",
         "label": "Timeline Mapping File",
         "type": "file",
-        "filters": { "name": "JSON", "extensions": ["json"] },
+        "filters": {
+          "name": "JSON",
+          "extensions": [
+            "json"
+          ]
+        },
         "required": true,
         "default": "./output/music-timeline.json",
         "description": "Path to music-timeline.json from Music Editor"

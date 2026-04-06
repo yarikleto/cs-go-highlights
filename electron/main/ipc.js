@@ -139,7 +139,7 @@ function setupIPC() {
 
   // Save file dialog
   ipcMain.handle('select-save-file', async (event, filters) => {
-    const dialogFilters = filters ? [filters] : [];
+    const dialogFilters = filters ? [filters, { name: 'All Files', extensions: ['*'] }] : [];
 
     const result = await dialog.showSaveDialog({
       filters: dialogFilters,
@@ -154,7 +154,7 @@ function setupIPC() {
 
   // Select file dialog
   ipcMain.handle('select-file', async (event, filters) => {
-    const dialogFilters = filters ? [filters] : [];
+    const dialogFilters = filters ? [filters, { name: 'All Files', extensions: ['*'] }] : [];
     
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],

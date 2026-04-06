@@ -40,7 +40,6 @@
 git clone https://github.com/yarikleto/cs-go-highlights.git
 cd cs-go-highlights
 npm install
-cd electron && npm install
 ```
 
 ## Getting Started

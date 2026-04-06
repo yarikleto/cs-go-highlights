@@ -128,9 +128,13 @@ async function topCommand(options) {
 function applyFilters(highlights, options) {
   let result = highlights;
   
-  // Filter by player
+  // Filter by player (Steam ID or name)
   if (options.player) {
     result = result.filter(h => h.player?.steamId === options.player);
+  }
+  if (options.playerName) {
+    const name = options.playerName.toLowerCase();
+    result = result.filter(h => h.player?.name?.toLowerCase().includes(name));
   }
   
   // Filter by type
@@ -484,6 +488,7 @@ function getSlowmoBonus(highlight) {
 function buildFiltersInfo(options) {
   const filters = {};
   if (options.player) filters.player = options.player;
+  if (options.playerName) filters.playerName = options.playerName;
   if (options.type) filters.type = options.type;
   if (options.minKills) filters.minKills = options.minKills;
   if (options.uniquePlayers) filters.uniquePlayers = options.uniquePlayers;
