@@ -1,22 +1,38 @@
-# CS:GO Highlights
+<p align="center">
+  <img src="docs/banner.svg" alt="CS:GO Highlights" width="800"/>
+</p>
 
-Automatically detect and record impressive gameplay moments from CS:GO/CS2 demo files. Drop your `.dem` files in, get a polished highlight video out -- complete with speedup, slow motion, player overlays, and background music.
+<p align="center">
+  <a href="https://github.com/yarikleto/cs-go-highlights/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js">
+  <img src="https://img.shields.io/badge/platform-Windows%20only-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/electron-28-blue.svg" alt="Electron">
+</p>
+
+<p align="center">
+  Automatically detect and record impressive gameplay moments from CS:GO/CS2 demo files.<br/>
+  Drop your <code>.dem</code> files in, get a polished highlight video out — complete with speedup, slow motion, player overlays, and background music.
+</p>
+
+---
 
 ## Features
 
 - **Automatic detection** of kill series, aces, clutches, knife kills, collaterals, one-taps, and flick shots
 - **Video recording** via HLAE with automatic CS:GO configuration
-- **Post-processing** -- speedup between kills, slow motion on headshots, player name overlays
+- **Post-processing** — speedup between kills, slow motion on headshots, player name overlays
 - **Background music** with per-clip timing control and fade in/out
 - **Scoring system** to rank and select the most impressive highlights
-- **Multi-step workflows** -- run the full pipeline or individual steps from the UI
+- **Multi-step workflows** — run the full pipeline or individual steps from the UI
 
 ## Prerequisites
 
-- **Node.js** (v18+)
-- **FFmpeg** -- must be in PATH. [Download](https://ffmpeg.org/)
-- **HLAE** (Half-Life Advanced Effects) -- for video capture. [Download](https://www.advancedfx.org/)
-- **CS:GO Legacy** -- HLAE does not support CS2. Install via Steam: right-click Counter-Strike 2 -> Properties -> Betas -> select `csgo_legacy`
+| Dependency | Description |
+|------------|-------------|
+| **[Node.js](https://nodejs.org/)** (v18+) | Runtime |
+| **[FFmpeg](https://ffmpeg.org/)** | Video encoding — must be in PATH |
+| **[HLAE](https://www.advancedfx.org/)** | Half-Life Advanced Effects — video capture |
+| **CS:GO Legacy** | HLAE does not support CS2. Install via Steam: CS2 → Properties → Betas → `csgo_legacy` |
 
 ## Installation
 
@@ -37,12 +53,20 @@ npm run dev
 
 This opens the Electron UI where you can:
 
-1. **Configure paths** -- set your demos folder, HLAE location, and CS:GO installation path in the Settings page
-2. **Run workflows** -- use the built-in pipelines (e.g., "Full Legacy Pipeline") to analyze demos, record clips, apply effects, and merge into a final video
-3. **Browse highlights** -- preview detected highlights, sort by map/score, and manage your clips
-4. **Fine-tune music** -- adjust music timing per clip in the Music Editor
+1. **Configure paths** — set your demos folder, HLAE location, and CS:GO installation path in the Settings page
+2. **Run workflows** — use the built-in pipelines (e.g., "Full Legacy Pipeline") to analyze demos, record clips, apply effects, and merge into a final video
+3. **Browse highlights** — preview detected highlights, sort by map/score, and manage your clips
+4. **Fine-tune music** — adjust music timing per clip in the Music Editor
 
 ## Typical Workflow
+
+```
+.dem files  →  Analyze  →  Record  →  Post-process  →  Merge  →  Final MP4
+                  │           │            │              │
+             detect       capture      speedup,       combine
+            highlights    via HLAE     slowmo,        into one
+                                      overlays        video
+```
 
 1. Place your `.dem` files in the demos folder
 2. Run **Analyze** to detect highlights
@@ -55,13 +79,15 @@ The UI provides flow runners that chain these steps together automatically.
 
 ## Documentation
 
-- [CLI Commands](docs/cli-commands.md) -- full reference for all commands and options
-- [Highlight Types](docs/highlight-types.md) -- detection criteria and priority system
-- [Video Effects](docs/video-effects.md) -- speedup, slow motion, overlays, recording settings
-- [Music](docs/music.md) -- background music setup and fine-tuning
-- [Scoring](docs/scoring.md) -- how highlights are ranked
-- [Output Format](docs/output-format.md) -- `highlights.json` structure and configuration defaults
+| Document | Description |
+|----------|-------------|
+| [CLI Commands](docs/cli-commands.md) | Full reference for all commands and options |
+| [Highlight Types](docs/highlight-types.md) | Detection criteria and priority system |
+| [Video Effects](docs/video-effects.md) | Speedup, slow motion, overlays, recording settings |
+| [Music](docs/music.md) | Background music setup and fine-tuning |
+| [Scoring](docs/scoring.md) | How highlights are ranked |
+| [Output Format](docs/output-format.md) | `highlights.json` structure and configuration defaults |
 
 ## License
 
-MIT
+[MIT](LICENSE)
