@@ -6,7 +6,7 @@
   <a href="https://github.com/yarikleto/cs-go-highlights/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js">
   <img src="https://img.shields.io/badge/platform-Windows%20only-lightgrey.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/electron-28-blue.svg" alt="Electron">
+  <img src="https://img.shields.io/badge/electron-41-blue.svg" alt="Electron">
 </p>
 
 <p align="center">
