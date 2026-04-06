@@ -1,5 +1,7 @@
 node_modules/
 output/
+electron/dist/
+electron/release/
 *.log
 .DS_Store
 .cursor/
