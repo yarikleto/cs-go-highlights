@@ -8,7 +8,13 @@
         "name": "archive",
         "label": "Archive File",
         "type": "file",
-        "filters": { "name": "Archive", "extensions": ["zip", "rar"] },
+        "filters": {
+          "name": "Archive",
+          "extensions": [
+            "zip",
+            "rar"
+          ]
+        },
         "required": true,
         "description": "Path to zip/rar archive containing .dem files"
       },
@@ -16,7 +22,12 @@
         "name": "outputPath",
         "label": "Output Video",
         "type": "save-file",
-        "filters": { "name": "Video", "extensions": ["mp4"] },
+        "filters": {
+          "name": "Video",
+          "extensions": [
+            "mp4"
+          ]
+        },
         "required": false,
         "description": "Where to save the final compressed video (defaults to ./output/highlights_final_compressed.mp4)"
       }
@@ -25,7 +36,10 @@
       {
         "name": "Clean directories",
         "type": "clean-dirs",
-        "dirs": ["./demos", "./output"]
+        "dirs": [
+          "./demos",
+          "./output"
+        ]
       },
       {
         "name": "Extract Demos",
@@ -83,6 +97,110 @@
         "command": "compress",
         "options": {
           "input": "./output/highlights_final.mp4",
+          "output": "$outputPath"
+        }
+      }
+    ]
+  },
+  {
+    "id": "player-highlights-pipeline",
+    "name": "Player Highlights (Low → High)",
+    "description": "Extract demos from an archive, analyze all highlights, filter by a specific player, sort from lowest to highest rating, and record everything. Produces individual clips sorted by impressiveness — great for a progression-style highlight reel.",
+    "params": [
+      {
+        "name": "archive",
+        "label": "Archive or Demos Folder",
+        "type": "file",
+        "filters": {
+          "name": "Archive",
+          "extensions": [
+            "zip",
+            "rar"
+          ]
+        },
+        "required": true,
+        "description": "Path to zip/rar archive containing .dem files"
+      },
+      {
+        "name": "player",
+        "label": "Player Steam ID",
+        "type": "text",
+        "required": true,
+        "description": "64-bit Steam ID of the player to filter highlights for"
+      },
+      {
+        "name": "outputPath",
+        "label": "Output Video",
+        "type": "save-file",
+        "filters": {
+          "name": "Video",
+          "extensions": [
+            "mp4"
+          ]
+        },
+        "required": false,
+        "description": "Where to save the final video (defaults to ./output/highlights_final.mp4)"
+      }
+    ],
+    "steps": [
+      {
+        "name": "Clean directories",
+        "type": "clean-dirs",
+        "dirs": [
+          "./demos",
+          "./output"
+        ]
+      },
+      {
+        "name": "Extract Demos",
+        "command": "extract",
+        "options": {
+          "archive": "$archive",
+          "output": "./demos"
+        }
+      },
+      {
+        "name": "Analyze (Legacy)",
+        "command": "analyze",
+        "options": {
+          "demos": "./demos",
+          "output": "./output"
+        }
+      },
+      {
+        "name": "Top Highlights (Player, Low → High)",
+        "command": "top",
+        "options": {
+          "highlights": "./output/highlights.json",
+          "count": 100,
+          "asc": true,
+          "player": "$player",
+          "unique-players": 100,
+          "output": "./output/highlights_top.json"
+        }
+      },
+      {
+        "name": "Record",
+        "command": "record",
+        "options": {
+          "highlights": "./output/highlights_top.json",
+          "voice-chat": true
+        }
+      },
+      {
+        "name": "Postprocess UI",
+        "command": "postprocess-ui",
+        "options": {
+          "highlights": "./output/highlights_top.json",
+          "speedup": 2,
+          "overlay": true
+        }
+      },
+      {
+        "name": "Merge",
+        "command": "merge",
+        "options": {
+          "clips": "./output/clips_processed",
           "output": "$outputPath"
         }
       }
