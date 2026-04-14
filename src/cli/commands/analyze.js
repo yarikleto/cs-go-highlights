@@ -12,13 +12,14 @@
 
 import path from 'path';
 import fs from 'fs';
-import { parseDemo } from '../../parser.js';
-import { detectHighlights } from '../../detector.js';
-import { resolveCollisions } from '../../resolver.js';
+import { Worker } from 'worker_threads';
+import os from 'os';
+import { fileURLToPath } from 'url';
 import { MusicPlaylist, saveMusicMapping, loadMusicMapping, resyncMusicMapping } from '../../music.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { validateDirExists, ensureDir, parseJsonFile } from '../validators.js';
-import { enrichAllHighlights } from '../services/highlightEnricher.js';
+
+const WORKER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'analyzeWorker.js');
 
 /**
  * Main analyze command handler
@@ -46,22 +47,24 @@ async function analyzeCommand(options) {
   // Initialize results structure
   const results = createResultsStructure();
 
-  // Process each demo file
-  for (const demoFile of demFiles) {
-    const fileName = path.basename(demoFile);
-    console.log(`\nProcessing: ${fileName}`);
+  // Process demo files in parallel using worker threads
+  const maxWorkers = Math.max(1, os.cpus().length - 1);
+  const concurrency = Math.min(maxWorkers, demFiles.length);
+  console.log(`Using ${concurrency} worker thread(s)`);
 
-    try {
-      const demoResult = await processSingleDemo(
-        demoFile, 
-        fileName, 
-        soloKillsByDemo[fileName] || []
-      );
-      
-      results.demos.push(demoResult);
-      updateSummary(results.summary, demoResult.highlights);
-    } catch (error) {
-      console.error(`  Error processing ${fileName}: ${error.message}`);
+  const tasks = demFiles.map(demoFile => {
+    const fileName = path.basename(demoFile);
+    return { demoFile, fileName, soloTicks: soloKillsByDemo[fileName] || [] };
+  });
+
+  const demoResults = await runPool(tasks, concurrency);
+
+  for (const { result, error, fileName } of demoResults) {
+    if (error) {
+      console.error(`  Error processing ${fileName}: ${error}`);
+    } else {
+      results.demos.push(result);
+      updateSummary(results.summary, result.highlights);
     }
   }
 
@@ -147,84 +150,69 @@ function createResultsStructure() {
 }
 
 /**
- * Process a single demo file
- * 
+ * Run a single demo through a worker thread
+ *
  * @param {string} demoFile - Full path to demo file
  * @param {string} fileName - Demo filename
- * @param {number[]} soloTicks - Ticks for solo kill highlights
- * @returns {Object} Demo result with highlights
+ * @param {number[]} soloTicks - Solo kill ticks
+ * @returns {Promise<Object>} Demo result with highlights
  */
-async function processSingleDemo(demoFile, fileName, soloTicks) {
-  // Parse demo
-  const demoData = await parseDemo(demoFile);
-  console.log(`  Tick rate: ${demoData.tickRate}`);
-  console.log(`  Total kills: ${demoData.kills.length}`);
-  console.log(`  Total rounds: ${demoData.rounds.length}`);
+function runWorker(demoFile, fileName, soloTicks) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(WORKER_PATH, {
+      workerData: { demoFile, fileName, soloTicks },
+    });
 
-  // Detect highlights
-  let highlights = detectHighlights(demoData, DEFAULT_CONFIG);
-  console.log(`  Raw highlights found: ${highlights.length}`);
+    worker.on('message', (msg) => {
+      if (msg.type === 'log') {
+        console.log(`[${fileName}]${msg.msg}`);
+      } else if (msg.type === 'result') {
+        worker.terminate();
+        resolve(msg.data);
+      } else if (msg.type === 'error') {
+        worker.terminate();
+        reject(new Error(msg.msg));
+      }
+    });
 
-  // Add solo kill highlights
-  const soloHighlights = createSoloHighlights(demoData, soloTicks);
-  if (soloHighlights.length > 0) {
-    highlights.push(...soloHighlights);
-    console.log(`  Added ${soloHighlights.length} solo kill highlight(s)`);
-  }
-
-  // Resolve collisions
-  highlights = resolveCollisions(highlights);
-  console.log(`  After collision resolution: ${highlights.length}`);
-
-  // Enrich with playback metadata
-  highlights = enrichAllHighlights(highlights, demoData, fileName, DEFAULT_CONFIG);
-
-  return {
-    file: fileName,
-    map: demoData.header.mapName,
-    tickRate: demoData.tickRate,
-    highlights,
-  };
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Worker exited with code ${code}`));
+      }
+    });
+  });
 }
 
 /**
- * Create solo kill highlights from specified ticks
- * 
- * Solo highlights are manually-specified single kills worth featuring.
- * 
- * @param {Object} demoData - Parsed demo data
- * @param {number[]} soloTicks - Ticks to create highlights for
- * @returns {Array} Solo highlight objects
+ * Run tasks through a pool of workers with limited concurrency
+ *
+ * @param {Array<{demoFile: string, fileName: string, soloTicks: number[]}>} tasks
+ * @param {number} concurrency - Max parallel workers
+ * @returns {Promise<Array<{result?: Object, error?: string, fileName: string}>>}
  */
-function createSoloHighlights(demoData, soloTicks) {
-  const highlights = [];
-  const soloPriority = DEFAULT_CONFIG.priorities['solo'] || 1;
-  
-  for (const tick of soloTicks) {
-    const kill = demoData.kills.find(k => k.tick === tick);
-    if (!kill) {
-      console.log(`  Warning: No kill found at tick ${tick}`);
-      continue;
+async function runPool(tasks, concurrency) {
+  const results = new Array(tasks.length);
+  let nextIndex = 0;
+
+  async function pickNext() {
+    while (nextIndex < tasks.length) {
+      const i = nextIndex++;
+      const { demoFile, fileName, soloTicks } = tasks[i];
+      console.log(`\nProcessing: ${fileName}`);
+      try {
+        const result = await runWorker(demoFile, fileName, soloTicks);
+        results[i] = { result, fileName };
+      } catch (error) {
+        results[i] = { error: error.message, fileName };
+      }
     }
-    
-    // Calculate points
-    const points = (kill.headshot ? (DEFAULT_CONFIG.killPoints?.headshot || 2) : (DEFAULT_CONFIG.killPoints?.normal || 1)) +
-                  (kill.noscope ? (DEFAULT_CONFIG.killPoints?.noscope || 3) : 0);
-    
-    highlights.push({
-      type: 'solo',
-      priority: soloPriority,
-      player: {
-        name: kill.attacker.name,
-        steamId: kill.attacker.steamId,
-      },
-      tick: kill.tick,
-      kills: [kill],
-      points,
-    });
   }
-  
-  return highlights;
+
+  const lanes = Array.from({ length: concurrency }, () => pickNext());
+  await Promise.all(lanes);
+
+  return results;
 }
 
 /**

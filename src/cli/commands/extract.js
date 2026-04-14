@@ -11,7 +11,7 @@ import fs from 'fs';
 import os from 'os';
 import { createGunzip } from 'zlib';
 import { pipeline } from 'stream/promises';
-import AdmZip from 'adm-zip';
+import yauzl from 'yauzl';
 
 const DEMO_EXTENSION = '.dem';
 const SUPPORTED_ARCHIVES = new Set(['.zip', '.rar']);
@@ -122,7 +122,7 @@ async function extractRecursive(archivePath, extractTo, demoFiles, depth) {
 
   try {
     if (ext === '.zip') {
-      extractZip(archivePath, extractTo);
+      await extractZip(archivePath, extractTo);
     } else if (ext === '.rar') {
       await extractRar(archivePath, extractTo);
     } else {
@@ -138,11 +138,36 @@ async function extractRecursive(archivePath, extractTo, demoFiles, depth) {
 }
 
 /**
- * Extract a .zip archive using adm-zip
+ * Extract a .zip archive using yauzl (supports files > 2 GiB)
  */
 function extractZip(archivePath, extractTo) {
-  const zip = new AdmZip(archivePath);
-  zip.extractAllTo(extractTo, true);
+  return new Promise((resolve, reject) => {
+    yauzl.open(archivePath, { lazyEntries: true }, (err, zipfile) => {
+      if (err) return reject(err);
+
+      zipfile.readEntry();
+      zipfile.on('entry', (entry) => {
+        // Skip directories
+        if (entry.fileName.endsWith('/')) {
+          zipfile.readEntry();
+          return;
+        }
+
+        const destPath = path.join(extractTo, entry.fileName);
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+
+        zipfile.openReadStream(entry, (err, readStream) => {
+          if (err) return reject(err);
+          const writeStream = fs.createWriteStream(destPath);
+          readStream.pipe(writeStream);
+          writeStream.on('close', () => zipfile.readEntry());
+          writeStream.on('error', reject);
+        });
+      });
+      zipfile.on('end', resolve);
+      zipfile.on('error', reject);
+    });
+  });
 }
 
 /**

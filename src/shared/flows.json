@@ -130,6 +130,15 @@
         "description": "In-game nickname of the player to filter highlights for (partial match, case-insensitive)"
       },
       {
+        "name": "topCount",
+        "label": "Number of Highlights",
+        "type": "number",
+        "default": 10,
+        "min": 1,
+        "max": 100,
+        "description": "How many top highlights to include in the video"
+      },
+      {
         "name": "outputPath",
         "label": "Output Video",
         "type": "save-file",
@@ -173,7 +182,7 @@
         "command": "top",
         "options": {
           "highlights": "./output/highlights.json",
-          "count": 100,
+          "count": "$topCount",
           "asc": true,
           "player-name": "$playerName",
           "unique-players": 100,

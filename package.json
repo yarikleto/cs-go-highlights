@@ -33,9 +33,9 @@
   },
   "homepage": "https://github.com/yarikleto/cs-go-highlights#readme",
   "dependencies": {
-    "adm-zip": "^0.5.16",
     "commander": "^14.0.2",
     "demofile": "^2.10.0",
-    "node-unrar-js": "^2.0.2"
+    "node-unrar-js": "^2.0.2",
+    "yauzl": "^3.3.0"
   }
 }

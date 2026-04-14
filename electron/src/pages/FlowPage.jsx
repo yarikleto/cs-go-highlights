@@ -182,6 +182,26 @@ function FlowPage() {
       );
     }
 
+    if (param.type === 'number') {
+      return (
+        <TextField
+          key={param.name}
+          label={param.label || param.name}
+          value={value}
+          onChange={(e) => handleParamChange(param.name, e.target.value === '' ? '' : Number(e.target.value))}
+          fullWidth
+          required={param.required}
+          helperText={param.description}
+          type="number"
+          inputProps={{
+            min: param.min,
+            max: param.max,
+            step: param.step || 1,
+          }}
+        />
+      );
+    }
+
     return (
       <TextField
         key={param.name}
