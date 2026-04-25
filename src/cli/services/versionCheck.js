@@ -63,3 +63,43 @@ export function readSteamInf(csgoPath) {
 
   return { clientVersion, serverVersion };
 }
+
+const DEMO_HEADER_SIZE = 1072;
+const DEMO_MAGIC = 'HL2DEMO\0';
+
+/**
+ * Read the 1072-byte CS:GO demo header without parsing the full file.
+ *
+ * @param {string} filePath Absolute or relative path to a .dem file.
+ * @returns {{ file: string, demoProtocol: number, networkProtocol: number, mapName: string }}
+ */
+export function readDemoHeader(filePath) {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(DEMO_HEADER_SIZE);
+    const bytesRead = fs.readSync(fd, buf, 0, DEMO_HEADER_SIZE, 0);
+    if (bytesRead < DEMO_HEADER_SIZE) {
+      throw new Error(`Demo file ${filePath} is too short to contain a header (${bytesRead} bytes)`);
+    }
+
+    const magic = buf.toString('binary', 0, 8);
+    if (magic !== DEMO_MAGIC) {
+      throw new Error(`File ${filePath} is not a CS:GO demo (bad magic ${JSON.stringify(magic)})`);
+    }
+
+    const demoProtocol = buf.readInt32LE(8);
+    const networkProtocol = buf.readInt32LE(12);
+    // Map name is a null-padded fixed-width string at offset 536.
+    const mapEnd = buf.indexOf(0, 536);
+    const mapName = buf.toString('utf8', 536, mapEnd >= 0 && mapEnd < 796 ? mapEnd : 796);
+
+    return {
+      file: path.basename(filePath),
+      demoProtocol,
+      networkProtocol,
+      mapName,
+    };
+  } finally {
+    fs.closeSync(fd);
+  }
+}

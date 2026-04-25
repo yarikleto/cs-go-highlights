@@ -39,3 +39,51 @@ test('readSteamInf throws when steam.inf file does not exist', () => {
   const csgoPath = path.join(FIXTURES, 'install-nonexistent');
   assert.throws(() => readSteamInf(csgoPath), /steam\.inf/);
 });
+
+import os from 'node:os';
+import fs from 'node:fs';
+import { readDemoHeader } from './versionCheck.js';
+
+function buildSyntheticDemo(networkProtocol, mapName = 'de_inferno') {
+  const buf = Buffer.alloc(1072 + 32, 0); // header + a few junk bytes after
+  buf.write('HL2DEMO\0', 0, 'binary');
+  buf.writeInt32LE(4, 8);                // demo protocol
+  buf.writeInt32LE(networkProtocol, 12); // networkProtocol
+  buf.write(mapName, 536, 'utf8');       // null-padded by Buffer.alloc
+  return buf;
+}
+
+test('readDemoHeader returns networkProtocol and mapName from synthetic header', () => {
+  const tmp = path.join(os.tmpdir(), `vcheck-${Date.now()}.dem`);
+  fs.writeFileSync(tmp, buildSyntheticDemo(13780, 'de_dust2'));
+  try {
+    const header = readDemoHeader(tmp);
+    assert.equal(header.networkProtocol, 13780);
+    assert.equal(header.mapName, 'de_dust2');
+    assert.equal(header.file, path.basename(tmp));
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
+
+test('readDemoHeader rejects file with wrong magic', () => {
+  const tmp = path.join(os.tmpdir(), `vcheck-bad-${Date.now()}.dem`);
+  const buf = Buffer.alloc(1072, 0);
+  buf.write('NOTADEMO', 0, 'binary');
+  fs.writeFileSync(tmp, buf);
+  try {
+    assert.throws(() => readDemoHeader(tmp), /not a CS:GO demo|magic/i);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
+
+test('readDemoHeader throws when file is shorter than header', () => {
+  const tmp = path.join(os.tmpdir(), `vcheck-short-${Date.now()}.dem`);
+  fs.writeFileSync(tmp, Buffer.alloc(100, 0));
+  try {
+    assert.throws(() => readDemoHeader(tmp), /header|too short/i);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
