@@ -5,6 +5,7 @@
  * This ensures consistency across the codebase and makes tuning easier.
  * 
  * Configuration Sections:
+ * - GAME VERSION: Expected CS:GO build numbers for demo compatibility checks
  * - RECORDING: Video capture settings (resolution, framerate, codec)
  * - ENCODING: FFmpeg encoding parameters (CRF, presets, bitrates)
  * - TIMING: Padding, durations, timeouts
