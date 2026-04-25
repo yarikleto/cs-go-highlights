@@ -18,6 +18,12 @@ import { detectHighlightsV2 } from '../../detectorV2.js';
 import { resolveCollisionsV2 } from '../../resolverV2.js';
 // Note: Music mapping removed from V2 - use separate command if needed
 import { DEFAULT_CONFIG } from '../config.js';
+import { GAME_VERSION } from '../../config.js';
+import {
+  readDemoHeader,
+  assertVersionCompatibility,
+  VersionMismatchError,
+} from '../services/versionCheck.js';
 import { validateDirExists, ensureDir } from '../validators.js';
 import { enrichAllHighlightsV2 } from '../services/highlightEnricherV2.js';
 
@@ -39,7 +45,25 @@ async function analyzeV2Command(options) {
   
   // Find demo files
   const demFiles = findDemoFiles(demosPath);
-  
+
+  // Version compatibility check (fail fast before workers spawn).
+  if (options.skipVersionCheck) {
+    console.warn('[V2] WARNING: --skip-version-check enabled, demo/game version not verified');
+  } else {
+    const expected = resolveExpectedVersion(options);
+    const demoHeaders = demFiles.map(f => readDemoHeader(f));
+    try {
+      assertVersionCompatibility({ demoHeaders, expected });
+    } catch (err) {
+      if (err instanceof VersionMismatchError) {
+        console.error(err.message);
+        console.error('\nUse --skip-version-check to bypass (not recommended).');
+        process.exit(1);
+      }
+      throw err;
+    }
+  }
+
   console.log(`[V2] Found ${demFiles.length} demo file(s)`);
   console.log('[V2] Config:', DEFAULT_CONFIG.detection);
   console.log('[V2] Note: Points not calculated (raw data only)');
@@ -267,6 +291,22 @@ function writeHighlightsJson(outputPath, results) {
   console.log(`\n[V2] Results written to: ${outputFile}`);
   console.log(`[V2] Total highlights: ${results.summary.totalHighlights}`);
   console.log('[V2] By type:', results.summary.byType);
+}
+
+/**
+ * Build the expected version triple from CLI options, falling back to GAME_VERSION.
+ * Commander's number parser already coerces --client-version / --server-version /
+ * --network-protocol to numbers; missing values come back as `undefined`.
+ */
+function resolveExpectedVersion(options) {
+  const networkProtocolRaw = options.networkProtocol;
+  return {
+    clientVersion: options.clientVersion ?? GAME_VERSION.clientVersion,
+    serverVersion: options.serverVersion ?? GAME_VERSION.serverVersion,
+    networkProtocol: (networkProtocolRaw === undefined || Number.isNaN(networkProtocolRaw))
+      ? GAME_VERSION.networkProtocol
+      : networkProtocolRaw,
+  };
 }
 
 export { analyzeV2Command };
