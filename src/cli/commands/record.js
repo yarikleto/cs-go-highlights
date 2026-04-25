@@ -10,7 +10,12 @@ import fs from 'fs';
 import { recordAllHighlights } from '../../recorder.js';
 import { cleanupTempFiles } from '../../merger.js';
 import { validateFileExists, validateDirExists, ensureDir, parseJsonFile, getHighlights } from '../validators.js';
-import { RECORDING_QUALITY } from '../../config.js';
+import { RECORDING_QUALITY, GAME_VERSION } from '../../config.js';
+import {
+  readDemoHeader,
+  assertVersionCompatibility,
+  VersionMismatchError,
+} from '../services/versionCheck.js';
 
 /**
  * Main record command handler
@@ -51,6 +56,30 @@ async function recordCommand(options) {
 
   // Parse highlights
   const highlightsData = parseJsonFile(highlightsPath, 'highlights.json');
+
+  // Version compatibility check (fail fast before HLAE spawn).
+  if (options.skipVersionCheck) {
+    console.warn('WARNING: --skip-version-check enabled, demo/game version not verified');
+  } else {
+    const expected = resolveExpectedVersion(options);
+    const highlightsList = getHighlights(highlightsData);
+    const demoFilesUsed = [...new Set(highlightsList.map(h => h.demoFile))]
+      .filter(Boolean)
+      .map(name => path.join(demosPath, name))
+      .filter(p => fs.existsSync(p));
+
+    const demoHeaders = demoFilesUsed.map(f => readDemoHeader(f));
+    try {
+      assertVersionCompatibility({ csgoPath, demoHeaders, expected });
+    } catch (err) {
+      if (err instanceof VersionMismatchError) {
+        console.error(err.message);
+        console.error('\nUse --skip-version-check to bypass (not recommended).');
+        process.exit(1);
+      }
+      throw err;
+    }
+  }
 
   // Count highlights and calculate estimated time (with filters)
   const { count: totalHighlights, estimatedSeconds } = getHighlightStats(highlightsData, playerFilter, idFilter);
@@ -199,6 +228,17 @@ function printRecordCompletion(clipCount, outputPath, highlightsPath) {
   console.log('\nNext steps:');
   console.log(`  1. Post-process UI: node src/index.js postprocess-ui --highlights "${highlightsPath}" --clips "${clipsDir}"`);
   console.log(`  2. Merge clips: node src/index.js merge --clips "${clipsDir}"`);
+}
+
+function resolveExpectedVersion(options) {
+  const networkProtocolRaw = options.networkProtocol;
+  return {
+    clientVersion: options.clientVersion ?? GAME_VERSION.clientVersion,
+    serverVersion: options.serverVersion ?? GAME_VERSION.serverVersion,
+    networkProtocol: (networkProtocolRaw === undefined || Number.isNaN(networkProtocolRaw))
+      ? GAME_VERSION.networkProtocol
+      : networkProtocolRaw,
+  };
 }
 
 export { recordCommand };
