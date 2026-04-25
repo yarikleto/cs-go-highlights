@@ -60,14 +60,12 @@
         "name": "client-version",
         "label": "Expected ClientVersion",
         "type": "number",
-        "default": 2000335,
         "description": "From steam.inf — Steam build the demos were recorded on"
       },
       {
         "name": "server-version",
         "label": "Expected ServerVersion",
         "type": "number",
-        "default": 2000335,
         "description": "From steam.inf — must match ClientVersion in practice"
       },
       {
@@ -274,14 +272,12 @@
         "name": "client-version",
         "label": "Expected ClientVersion",
         "type": "number",
-        "default": 2000335,
         "description": "From steam.inf — Steam build the demos were recorded on"
       },
       {
         "name": "server-version",
         "label": "Expected ServerVersion",
         "type": "number",
-        "default": 2000335,
         "description": "From steam.inf — must match ClientVersion in practice"
       },
       {

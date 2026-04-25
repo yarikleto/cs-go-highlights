@@ -23,6 +23,7 @@ import {
   readDemoHeader,
   assertVersionCompatibility,
   VersionMismatchError,
+  resolveExpectedVersion,
 } from '../services/versionCheck.js';
 import { validateDirExists, ensureDir } from '../validators.js';
 import { enrichAllHighlightsV2 } from '../services/highlightEnricherV2.js';
@@ -50,7 +51,7 @@ async function analyzeV2Command(options) {
   if (options.skipVersionCheck) {
     console.warn('[V2] WARNING: --skip-version-check enabled, demo/game version not verified');
   } else {
-    const expected = resolveExpectedVersion(options);
+    const expected = resolveExpectedVersion(options, GAME_VERSION);
     const demoHeaders = demFiles.map(f => readDemoHeader(f));
     try {
       assertVersionCompatibility({ demoHeaders, expected });
@@ -291,22 +292,6 @@ function writeHighlightsJson(outputPath, results) {
   console.log(`\n[V2] Results written to: ${outputFile}`);
   console.log(`[V2] Total highlights: ${results.summary.totalHighlights}`);
   console.log('[V2] By type:', results.summary.byType);
-}
-
-/**
- * Build the expected version triple from CLI options, falling back to GAME_VERSION.
- * Commander's number parser already coerces --client-version / --server-version /
- * --network-protocol to numbers; missing values come back as `undefined`.
- */
-function resolveExpectedVersion(options) {
-  const networkProtocolRaw = options.networkProtocol;
-  return {
-    clientVersion: options.clientVersion ?? GAME_VERSION.clientVersion,
-    serverVersion: options.serverVersion ?? GAME_VERSION.serverVersion,
-    networkProtocol: (networkProtocolRaw === undefined || Number.isNaN(networkProtocolRaw))
-      ? GAME_VERSION.networkProtocol
-      : networkProtocolRaw,
-  };
 }
 
 export { analyzeV2Command };

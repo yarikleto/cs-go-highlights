@@ -159,3 +159,25 @@ export function assertVersionCompatibility({ csgoPath, demoHeaders, expected }) 
     throw new VersionMismatchError(reasons);
   }
 }
+
+/**
+ * Build the expected version triple from CLI options, falling back to GAME_VERSION
+ * defaults. Commander coerces `--client-version` / `--server-version` /
+ * `--network-protocol` to numbers; missing flags arrive as `undefined`.
+ *
+ * @param {Object} options Commander options object.
+ * @param {{clientVersion: number, serverVersion: number, networkProtocol: number|null}} defaults
+ *   Usually `GAME_VERSION` from `src/config.js`. Passed in (rather than imported)
+ *   so this function stays a pure pure-logic helper, easy to test.
+ * @returns {{clientVersion: number, serverVersion: number, networkProtocol: number|null}}
+ */
+export function resolveExpectedVersion(options, defaults) {
+  const networkProtocolRaw = options.networkProtocol;
+  return {
+    clientVersion: options.clientVersion ?? defaults.clientVersion,
+    serverVersion: options.serverVersion ?? defaults.serverVersion,
+    networkProtocol: (networkProtocolRaw === undefined || Number.isNaN(networkProtocolRaw))
+      ? defaults.networkProtocol
+      : networkProtocolRaw,
+  };
+}

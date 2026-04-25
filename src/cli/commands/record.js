@@ -15,6 +15,7 @@ import {
   readDemoHeader,
   assertVersionCompatibility,
   VersionMismatchError,
+  resolveExpectedVersion,
 } from '../services/versionCheck.js';
 
 /**
@@ -61,7 +62,7 @@ async function recordCommand(options) {
   if (options.skipVersionCheck) {
     console.warn('WARNING: --skip-version-check enabled, demo/game version not verified');
   } else {
-    const expected = resolveExpectedVersion(options);
+    const expected = resolveExpectedVersion(options, GAME_VERSION);
     const highlightsList = getHighlights(highlightsData);
     const demoFilesUsed = [...new Set(highlightsList.map(h => h.demoFile))]
       .filter(Boolean)
@@ -228,17 +229,6 @@ function printRecordCompletion(clipCount, outputPath, highlightsPath) {
   console.log('\nNext steps:');
   console.log(`  1. Post-process UI: node src/index.js postprocess-ui --highlights "${highlightsPath}" --clips "${clipsDir}"`);
   console.log(`  2. Merge clips: node src/index.js merge --clips "${clipsDir}"`);
-}
-
-function resolveExpectedVersion(options) {
-  const networkProtocolRaw = options.networkProtocol;
-  return {
-    clientVersion: options.clientVersion ?? GAME_VERSION.clientVersion,
-    serverVersion: options.serverVersion ?? GAME_VERSION.serverVersion,
-    networkProtocol: (networkProtocolRaw === undefined || Number.isNaN(networkProtocolRaw))
-      ? GAME_VERSION.networkProtocol
-      : networkProtocolRaw,
-  };
 }
 
 export { recordCommand };

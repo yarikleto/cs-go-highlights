@@ -174,3 +174,29 @@ test('assertVersionCompatibility collects multiple reasons in one error', () => 
     assert.equal(err.reasons.length, 3); // client mismatch + server mismatch + demo mismatch
   }
 });
+
+import { resolveExpectedVersion } from './versionCheck.js';
+
+const DEFAULTS = { clientVersion: 2000335, serverVersion: 2000335, networkProtocol: null };
+
+test('resolveExpectedVersion uses defaults when options are empty', () => {
+  assert.deepEqual(resolveExpectedVersion({}, DEFAULTS), DEFAULTS);
+});
+
+test('resolveExpectedVersion lets CLI options override defaults', () => {
+  const result = resolveExpectedVersion(
+    { clientVersion: 9999, serverVersion: 8888, networkProtocol: 13780 },
+    DEFAULTS,
+  );
+  assert.deepEqual(result, { clientVersion: 9999, serverVersion: 8888, networkProtocol: 13780 });
+});
+
+test('resolveExpectedVersion preserves networkProtocol=0 (not coerced to default)', () => {
+  const result = resolveExpectedVersion({ networkProtocol: 0 }, DEFAULTS);
+  assert.equal(result.networkProtocol, 0);
+});
+
+test('resolveExpectedVersion treats NaN networkProtocol as missing', () => {
+  const result = resolveExpectedVersion({ networkProtocol: Number.NaN }, { ...DEFAULTS, networkProtocol: 13753 });
+  assert.equal(result.networkProtocol, 13753);
+});
