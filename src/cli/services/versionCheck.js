@@ -103,3 +103,59 @@ export function readDemoHeader(filePath) {
     fs.closeSync(fd);
   }
 }
+
+/**
+ * Verify the installed game and the demo batch agree with the expected version.
+ * Collects ALL violations into one error so the user sees everything at once.
+ *
+ * @param {Object} args
+ * @param {string} [args.csgoPath] Optional CS:GO install root. When provided,
+ *   steam.inf is parsed and ClientVersion / ServerVersion are checked against
+ *   `expected`. analyze-v2 omits this; record provides it.
+ * @param {Array<{file: string, networkProtocol: number}>} args.demoHeaders
+ *   Headers of all demos that will be processed in this run.
+ * @param {{clientVersion: number, serverVersion: number, networkProtocol: number|null}} args.expected
+ *   Expected version triple from `GAME_VERSION` in src/config.js (possibly
+ *   overridden by CLI flags).
+ * @throws {VersionMismatchError} if any check fails.
+ */
+export function assertVersionCompatibility({ csgoPath, demoHeaders, expected }) {
+  const reasons = [];
+
+  if (csgoPath) {
+    const inf = readSteamInf(csgoPath);
+    if (inf.clientVersion !== expected.clientVersion) {
+      reasons.push(
+        `steam.inf ClientVersion=${inf.clientVersion} does not match expected ${expected.clientVersion} ` +
+        `(Steam may have auto-updated CS:GO — restore steam.inf or update config)`
+      );
+    }
+    if (inf.serverVersion !== expected.serverVersion) {
+      reasons.push(
+        `steam.inf ServerVersion=${inf.serverVersion} does not match expected ${expected.serverVersion} ` +
+        `(Steam may have auto-updated CS:GO — restore steam.inf or update config)`
+      );
+    }
+  }
+
+  if (expected.networkProtocol !== null && expected.networkProtocol !== undefined) {
+    for (const h of demoHeaders) {
+      if (h.networkProtocol !== expected.networkProtocol) {
+        reasons.push(
+          `Demo "${h.file}" has networkProtocol=${h.networkProtocol}, expected ${expected.networkProtocol}`
+        );
+      }
+    }
+  } else if (demoHeaders.length > 1) {
+    const first = demoHeaders[0].networkProtocol;
+    const mixed = demoHeaders.some(h => h.networkProtocol !== first);
+    if (mixed) {
+      const summary = demoHeaders.map(h => `${h.file}=${h.networkProtocol}`).join(', ');
+      reasons.push(`Demos use mixed networkProtocol: ${summary}`);
+    }
+  }
+
+  if (reasons.length > 0) {
+    throw new VersionMismatchError(reasons);
+  }
+}

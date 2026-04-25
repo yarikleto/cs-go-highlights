@@ -87,3 +87,90 @@ test('readDemoHeader throws when file is shorter than header', () => {
     fs.unlinkSync(tmp);
   }
 });
+
+import { assertVersionCompatibility } from './versionCheck.js';
+
+const EXPECTED_OK = { clientVersion: 2000335, serverVersion: 2000335, networkProtocol: 13753 };
+
+test('assertVersionCompatibility passes when steam.inf and headers all match', () => {
+  const csgoPath = path.join(FIXTURES, 'install-good');
+  const demoHeaders = [
+    { file: 'a.dem', networkProtocol: 13753 },
+    { file: 'b.dem', networkProtocol: 13753 },
+  ];
+  assert.doesNotThrow(() =>
+    assertVersionCompatibility({ csgoPath, demoHeaders, expected: EXPECTED_OK }));
+});
+
+test('assertVersionCompatibility throws on steam.inf mismatch with helpful reason', () => {
+  const csgoPath = path.join(FIXTURES, 'install-good');
+  const expected = { ...EXPECTED_OK, clientVersion: 9999999 };
+  const demoHeaders = [{ file: 'a.dem', networkProtocol: 13753 }];
+  try {
+    assertVersionCompatibility({ csgoPath, demoHeaders, expected });
+    assert.fail('expected throw');
+  } catch (err) {
+    assert.equal(err.name, 'VersionMismatchError');
+    assert.equal(err.reasons.length, 1);
+    assert.match(err.reasons[0], /ClientVersion=2000335.*expected 9999999/);
+    assert.match(err.reasons[0], /Steam may have auto-updated/);
+  }
+});
+
+test('assertVersionCompatibility throws once per demo with networkProtocol mismatch', () => {
+  const csgoPath = path.join(FIXTURES, 'install-good');
+  const demoHeaders = [
+    { file: 'good.dem', networkProtocol: 13753 },
+    { file: 'bad.dem',  networkProtocol: 13780 },
+  ];
+  try {
+    assertVersionCompatibility({ csgoPath, demoHeaders, expected: EXPECTED_OK });
+    assert.fail('expected throw');
+  } catch (err) {
+    assert.equal(err.reasons.length, 1);
+    assert.match(err.reasons[0], /bad\.dem.*13780.*expected 13753/);
+  }
+});
+
+test('assertVersionCompatibility with networkProtocol=null only checks batch consistency', () => {
+  const csgoPath = path.join(FIXTURES, 'install-good');
+  const expected = { ...EXPECTED_OK, networkProtocol: null };
+  const consistent = [
+    { file: 'a.dem', networkProtocol: 13780 },
+    { file: 'b.dem', networkProtocol: 13780 },
+  ];
+  assert.doesNotThrow(() =>
+    assertVersionCompatibility({ csgoPath, demoHeaders: consistent, expected }));
+
+  const inconsistent = [
+    { file: 'a.dem', networkProtocol: 13753 },
+    { file: 'b.dem', networkProtocol: 13780 },
+  ];
+  try {
+    assertVersionCompatibility({ csgoPath, demoHeaders: inconsistent, expected });
+    assert.fail('expected throw');
+  } catch (err) {
+    assert.equal(err.reasons.length, 1);
+    assert.match(err.reasons[0], /mixed networkProtocol/);
+    assert.match(err.reasons[0], /a\.dem=13753/);
+    assert.match(err.reasons[0], /b\.dem=13780/);
+  }
+});
+
+test('assertVersionCompatibility skips steam.inf when csgoPath is omitted', () => {
+  const demoHeaders = [{ file: 'a.dem', networkProtocol: 13753 }];
+  assert.doesNotThrow(() =>
+    assertVersionCompatibility({ demoHeaders, expected: EXPECTED_OK }));
+});
+
+test('assertVersionCompatibility collects multiple reasons in one error', () => {
+  const csgoPath = path.join(FIXTURES, 'install-good');
+  const expected = { clientVersion: 9999999, serverVersion: 8888888, networkProtocol: 13753 };
+  const demoHeaders = [{ file: 'bad.dem', networkProtocol: 13780 }];
+  try {
+    assertVersionCompatibility({ csgoPath, demoHeaders, expected });
+    assert.fail('expected throw');
+  } catch (err) {
+    assert.equal(err.reasons.length, 3); // client mismatch + server mismatch + demo mismatch
+  }
+});
