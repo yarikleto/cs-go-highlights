@@ -53,13 +53,35 @@
         "name": "solo-kills-file",
         "label": "Solo Kills File",
         "type": "file",
-        "filters": {
-          "name": "JSON",
-          "extensions": [
-            "json"
-          ]
-        },
+        "filters": { "name": "JSON", "extensions": ["json"] },
         "description": "Optional JSON file with manual solo kill ticks"
+      },
+      {
+        "name": "client-version",
+        "label": "Expected ClientVersion",
+        "type": "number",
+        "default": 2000335,
+        "description": "From steam.inf — Steam build the demos were recorded on"
+      },
+      {
+        "name": "server-version",
+        "label": "Expected ServerVersion",
+        "type": "number",
+        "default": 2000335,
+        "description": "From steam.inf — must match ClientVersion in practice"
+      },
+      {
+        "name": "network-protocol",
+        "label": "Expected Demo NetworkProtocol",
+        "type": "number",
+        "description": "From demo header. Leave blank to only verify all demos in the batch agree."
+      },
+      {
+        "name": "skip-version-check",
+        "label": "Skip Version Check",
+        "type": "boolean",
+        "default": false,
+        "description": "Bypass the game/demo version compatibility check (not recommended)"
       }
     ]
   },
@@ -247,6 +269,33 @@
         "type": "boolean",
         "default": false,
         "description": "Overwrite existing clips instead of skipping them"
+      },
+      {
+        "name": "client-version",
+        "label": "Expected ClientVersion",
+        "type": "number",
+        "default": 2000335,
+        "description": "From steam.inf — Steam build the demos were recorded on"
+      },
+      {
+        "name": "server-version",
+        "label": "Expected ServerVersion",
+        "type": "number",
+        "default": 2000335,
+        "description": "From steam.inf — must match ClientVersion in practice"
+      },
+      {
+        "name": "network-protocol",
+        "label": "Expected Demo NetworkProtocol",
+        "type": "number",
+        "description": "From demo header. Leave blank to only verify all demos in the batch agree."
+      },
+      {
+        "name": "skip-version-check",
+        "label": "Skip Version Check",
+        "type": "boolean",
+        "default": false,
+        "description": "Bypass the game/demo version compatibility check (not recommended)"
       }
     ]
   },
