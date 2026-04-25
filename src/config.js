@@ -47,6 +47,26 @@ export const TOP_COMMAND = Object.freeze({
 });
 
 // =============================================================================
+// GAME VERSION (compatibility check)
+// =============================================================================
+
+/**
+ * Expected CS:GO game version for demo compatibility.
+ *
+ * - clientVersion / serverVersion: integer values found in
+ *   <csgoPath>/csgo/steam.inf. Must match exactly. If Steam auto-updates the
+ *   game these will drift and the pipeline must abort.
+ * - networkProtocol: integer found in the .dem header (header.networkProtocol).
+ *   When non-null every demo must report this value. When null the check
+ *   degrades to "all demos in the batch must agree with each other".
+ */
+export const GAME_VERSION = Object.freeze({
+  clientVersion: 2000335,
+  serverVersion: 2000335,
+  networkProtocol: null,
+});
+
+// =============================================================================
 // HIGHLIGHT TYPES
 // =============================================================================
 
