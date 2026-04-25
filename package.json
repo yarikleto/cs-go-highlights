@@ -11,7 +11,8 @@
     "postinstall": "cd electron && npm install",
     "start": "node src/index.js",
     "dev": "npm run dev --prefix electron",
-    "build": "npm run build --prefix electron"
+    "build": "npm run build --prefix electron",
+    "test": "node --test \"src/**/*.test.js\""
   },
   "engines": {
     "node": ">=18"
