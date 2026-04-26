@@ -408,6 +408,40 @@ function GlobalConfig() {
         </AccordionDetails>
       </Accordion>
 
+      {/* Game Version Section */}
+      <Accordion
+        expanded={expanded.includes('gameVersion')}
+        onChange={handleAccordion('gameVersion')}
+      >
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="h6">Game Version</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Expected ClientVersion"
+                type="number"
+                value={config.gameVersion?.clientVersion ?? 2000335}
+                onChange={(e) => handleChange('gameVersion', 'clientVersion', parseInt(e.target.value, 10))}
+                fullWidth
+                helperText="From steam.inf — Steam build the demos were recorded on. Mismatch aborts analyze and record."
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Expected ServerVersion"
+                type="number"
+                value={config.gameVersion?.serverVersion ?? 2000335}
+                onChange={(e) => handleChange('gameVersion', 'serverVersion', parseInt(e.target.value, 10))}
+                fullWidth
+                helperText="From steam.inf — must match ClientVersion in practice."
+              />
+            </Grid>
+          </Grid>
+        </AccordionDetails>
+      </Accordion>
+
       {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
