@@ -69,12 +69,6 @@
         "description": "From steam.inf — must match ClientVersion in practice"
       },
       {
-        "name": "network-protocol",
-        "label": "Expected Demo NetworkProtocol",
-        "type": "number",
-        "description": "From demo header. Leave blank to only verify all demos in the batch agree."
-      },
-      {
         "name": "skip-version-check",
         "label": "Skip Version Check",
         "type": "boolean",
@@ -279,12 +273,6 @@
         "label": "Expected ServerVersion",
         "type": "number",
         "description": "From steam.inf — must match ClientVersion in practice"
-      },
-      {
-        "name": "network-protocol",
-        "label": "Expected Demo NetworkProtocol",
-        "type": "number",
-        "description": "From demo header. Leave blank to only verify all demos in the batch agree."
       },
       {
         "name": "skip-version-check",
