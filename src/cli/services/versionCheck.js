@@ -113,9 +113,10 @@ export function readDemoHeader(filePath) {
  *   steam.inf is parsed and ClientVersion / ServerVersion are checked against
  *   `expected`. analyze-v2 omits this; record provides it.
  * @param {Array<{file: string, networkProtocol: number}>} args.demoHeaders
- *   Headers of all demos that will be processed in this run.
- * @param {{clientVersion: number, serverVersion: number, networkProtocol: number|null}} args.expected
- *   Expected version triple from `GAME_VERSION` in src/config.js (possibly
+ *   Headers of all demos that will be processed in this run. When more than
+ *   one is provided, all must share the same networkProtocol.
+ * @param {{clientVersion: number, serverVersion: number}} args.expected
+ *   Expected version pair from `GAME_VERSION` in src/config.js (possibly
  *   overridden by CLI flags).
  * @throws {VersionMismatchError} if any check fails.
  */
@@ -138,15 +139,7 @@ export function assertVersionCompatibility({ csgoPath, demoHeaders, expected }) 
     }
   }
 
-  if (expected.networkProtocol !== null && expected.networkProtocol !== undefined) {
-    for (const h of demoHeaders) {
-      if (h.networkProtocol !== expected.networkProtocol) {
-        reasons.push(
-          `Demo "${h.file}" has networkProtocol=${h.networkProtocol}, expected ${expected.networkProtocol}`
-        );
-      }
-    }
-  } else if (demoHeaders.length > 1) {
+  if (demoHeaders.length > 1) {
     const first = demoHeaders[0].networkProtocol;
     const mixed = demoHeaders.some(h => h.networkProtocol !== first);
     if (mixed) {
@@ -161,23 +154,19 @@ export function assertVersionCompatibility({ csgoPath, demoHeaders, expected }) 
 }
 
 /**
- * Build the expected version triple from CLI options, falling back to GAME_VERSION
- * defaults. Commander coerces `--client-version` / `--server-version` /
- * `--network-protocol` to numbers; missing flags arrive as `undefined`.
+ * Build the expected version pair from CLI options, falling back to GAME_VERSION
+ * defaults. Commander coerces `--client-version` / `--server-version` to numbers;
+ * missing flags arrive as `undefined`.
  *
  * @param {Object} options Commander options object.
- * @param {{clientVersion: number, serverVersion: number, networkProtocol: number|null}} defaults
+ * @param {{clientVersion: number, serverVersion: number}} defaults
  *   Usually `GAME_VERSION` from `src/config.js`. Passed in (rather than imported)
  *   so this function stays a pure pure-logic helper, easy to test.
- * @returns {{clientVersion: number, serverVersion: number, networkProtocol: number|null}}
+ * @returns {{clientVersion: number, serverVersion: number}}
  */
 export function resolveExpectedVersion(options, defaults) {
-  const networkProtocolRaw = options.networkProtocol;
   return {
     clientVersion: options.clientVersion ?? defaults.clientVersion,
     serverVersion: options.serverVersion ?? defaults.serverVersion,
-    networkProtocol: (networkProtocolRaw === undefined || Number.isNaN(networkProtocolRaw))
-      ? defaults.networkProtocol
-      : networkProtocolRaw,
   };
 }
