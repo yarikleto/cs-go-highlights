@@ -229,6 +229,10 @@ function setupIPC() {
         speedupMultiplier: 3,
         showOverlay: true,
       },
+      gameVersion: {
+        clientVersion: 2000335,
+        serverVersion: 2000335,
+      },
     };
   });
 
