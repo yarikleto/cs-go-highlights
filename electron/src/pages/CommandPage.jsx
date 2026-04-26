@@ -26,10 +26,12 @@ import {
   Clear as ClearIcon,
 } from '@mui/icons-material';
 import { useCommandContext } from '../context/CommandContext';
+import { resolveOptionDefault } from '../utils/resolveOptionDefault.js';
 
 function CommandPage() {
   const { commandId } = useParams();
   const [command, setCommand] = useState(null);
+  const [globalConfig, setGlobalConfig] = useState(null);
   const logsEndRef = useRef(null);
   const initializedRef = useRef({});
   
@@ -74,6 +76,17 @@ function CommandPage() {
       });
     }
   }, [commandId, initializeOptions]);
+
+  // Load global config to seed form defaults
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    window.electronAPI.getConfig()
+      .then(setGlobalConfig)
+      .catch((err) => {
+        console.error('CommandPage: failed to load global config', err);
+        setGlobalConfig({}); // proceed with empty config; resolveOptionDefault falls back to opt.default
+      });
+  }, []);
 
   // Subscribe to command output
   useEffect(() => {
@@ -159,7 +172,7 @@ function CommandPage() {
   };
 
   const renderOption = (opt) => {
-    const value = options[opt.name] ?? opt.default ?? '';
+    const value = options[opt.name] ?? resolveOptionDefault(opt, globalConfig) ?? '';
 
     switch (opt.type) {
       case 'folder':
