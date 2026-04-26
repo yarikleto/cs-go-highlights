@@ -55,29 +55,16 @@ function CommandPage() {
   const result = getResult(commandId);
   const isRunning = isCommandRunning(commandId);
 
-  // Load command metadata and initialize defaults
+  // Load command metadata
   useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.getCommands().then((commands) => {
-        const cmd = commands.find((c) => c.id === commandId);
-        setCommand(cmd);
-        
-        // Initialize options with defaults only once per command
-        if (cmd && !initializedRef.current[commandId]) {
-          const defaults = {};
-          cmd.options?.forEach((opt) => {
-            if (opt.default !== undefined) {
-              defaults[opt.name] = opt.default;
-            }
-          });
-          initializeOptions(commandId, defaults);
-          initializedRef.current[commandId] = true;
-        }
-      });
-    }
-  }, [commandId, initializeOptions]);
+    if (!window.electronAPI) return;
+    window.electronAPI.getCommands().then((commands) => {
+      const cmd = commands.find((c) => c.id === commandId);
+      setCommand(cmd);
+    });
+  }, [commandId]);
 
-  // Load global config to seed form defaults
+  // Load global config (used to seed form defaults via resolveOptionDefault)
   useEffect(() => {
     if (!window.electronAPI) return;
     window.electronAPI.getConfig()
@@ -87,6 +74,23 @@ function CommandPage() {
         setGlobalConfig({}); // proceed with empty config; resolveOptionDefault falls back to opt.default
       });
   }, []);
+
+  // Seed form defaults once both command and globalConfig are available.
+  // Global Config values (when set) take precedence over commands.json `default`,
+  // matching the resolution priority used by renderOption at render time.
+  useEffect(() => {
+    if (!command || globalConfig === null) return;
+    if (initializedRef.current[commandId]) return;
+    const defaults = {};
+    command.options?.forEach((opt) => {
+      const resolved = resolveOptionDefault(opt, globalConfig);
+      if (resolved !== undefined) {
+        defaults[opt.name] = resolved;
+      }
+    });
+    initializeOptions(commandId, defaults);
+    initializedRef.current[commandId] = true;
+  }, [command, globalConfig, commandId, initializeOptions]);
 
   // Subscribe to command output
   useEffect(() => {
