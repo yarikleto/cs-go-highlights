@@ -90,7 +90,7 @@ test('readDemoHeader throws when file is shorter than header', () => {
 
 import { assertVersionCompatibility } from './versionCheck.js';
 
-const EXPECTED_OK = { clientVersion: 2000335, serverVersion: 2000335, networkProtocol: 13753 };
+const EXPECTED_OK = { clientVersion: 2000335, serverVersion: 2000335 };
 
 test('assertVersionCompatibility passes when steam.inf and headers all match', () => {
   const csgoPath = path.join(FIXTURES, 'install-good');
@@ -117,37 +117,14 @@ test('assertVersionCompatibility throws on steam.inf mismatch with helpful reaso
   }
 });
 
-test('assertVersionCompatibility throws once per demo with networkProtocol mismatch', () => {
+test('assertVersionCompatibility throws when demo batch has mixed networkProtocol', () => {
   const csgoPath = path.join(FIXTURES, 'install-good');
   const demoHeaders = [
-    { file: 'good.dem', networkProtocol: 13753 },
-    { file: 'bad.dem',  networkProtocol: 13780 },
-  ];
-  try {
-    assertVersionCompatibility({ csgoPath, demoHeaders, expected: EXPECTED_OK });
-    assert.fail('expected throw');
-  } catch (err) {
-    assert.equal(err.reasons.length, 1);
-    assert.match(err.reasons[0], /bad\.dem.*13780.*expected 13753/);
-  }
-});
-
-test('assertVersionCompatibility with networkProtocol=null only checks batch consistency', () => {
-  const csgoPath = path.join(FIXTURES, 'install-good');
-  const expected = { ...EXPECTED_OK, networkProtocol: null };
-  const consistent = [
-    { file: 'a.dem', networkProtocol: 13780 },
-    { file: 'b.dem', networkProtocol: 13780 },
-  ];
-  assert.doesNotThrow(() =>
-    assertVersionCompatibility({ csgoPath, demoHeaders: consistent, expected }));
-
-  const inconsistent = [
     { file: 'a.dem', networkProtocol: 13753 },
     { file: 'b.dem', networkProtocol: 13780 },
   ];
   try {
-    assertVersionCompatibility({ csgoPath, demoHeaders: inconsistent, expected });
+    assertVersionCompatibility({ csgoPath, demoHeaders, expected: EXPECTED_OK });
     assert.fail('expected throw');
   } catch (err) {
     assert.equal(err.reasons.length, 1);
@@ -155,6 +132,13 @@ test('assertVersionCompatibility with networkProtocol=null only checks batch con
     assert.match(err.reasons[0], /a\.dem=13753/);
     assert.match(err.reasons[0], /b\.dem=13780/);
   }
+});
+
+test('assertVersionCompatibility allows a single demo (no batch consistency check)', () => {
+  const csgoPath = path.join(FIXTURES, 'install-good');
+  const demoHeaders = [{ file: 'a.dem', networkProtocol: 13753 }];
+  assert.doesNotThrow(() =>
+    assertVersionCompatibility({ csgoPath, demoHeaders, expected: EXPECTED_OK }));
 });
 
 test('assertVersionCompatibility skips steam.inf when csgoPath is omitted', () => {
@@ -165,19 +149,19 @@ test('assertVersionCompatibility skips steam.inf when csgoPath is omitted', () =
 
 test('assertVersionCompatibility collects multiple reasons in one error', () => {
   const csgoPath = path.join(FIXTURES, 'install-good');
-  const expected = { clientVersion: 9999999, serverVersion: 8888888, networkProtocol: 13753 };
+  const expected = { clientVersion: 9999999, serverVersion: 8888888 };
   const demoHeaders = [{ file: 'bad.dem', networkProtocol: 13780 }];
   try {
     assertVersionCompatibility({ csgoPath, demoHeaders, expected });
     assert.fail('expected throw');
   } catch (err) {
-    assert.equal(err.reasons.length, 3); // client mismatch + server mismatch + demo mismatch
+    assert.equal(err.reasons.length, 2); // client mismatch + server mismatch
   }
 });
 
 import { resolveExpectedVersion } from './versionCheck.js';
 
-const DEFAULTS = { clientVersion: 2000335, serverVersion: 2000335, networkProtocol: null };
+const DEFAULTS = { clientVersion: 2000335, serverVersion: 2000335 };
 
 test('resolveExpectedVersion uses defaults when options are empty', () => {
   assert.deepEqual(resolveExpectedVersion({}, DEFAULTS), DEFAULTS);
@@ -185,18 +169,8 @@ test('resolveExpectedVersion uses defaults when options are empty', () => {
 
 test('resolveExpectedVersion lets CLI options override defaults', () => {
   const result = resolveExpectedVersion(
-    { clientVersion: 9999, serverVersion: 8888, networkProtocol: 13780 },
+    { clientVersion: 9999, serverVersion: 8888 },
     DEFAULTS,
   );
-  assert.deepEqual(result, { clientVersion: 9999, serverVersion: 8888, networkProtocol: 13780 });
-});
-
-test('resolveExpectedVersion preserves networkProtocol=0 (not coerced to default)', () => {
-  const result = resolveExpectedVersion({ networkProtocol: 0 }, DEFAULTS);
-  assert.equal(result.networkProtocol, 0);
-});
-
-test('resolveExpectedVersion treats NaN networkProtocol as missing', () => {
-  const result = resolveExpectedVersion({ networkProtocol: Number.NaN }, { ...DEFAULTS, networkProtocol: 13753 });
-  assert.equal(result.networkProtocol, 13753);
+  assert.deepEqual(result, { clientVersion: 9999, serverVersion: 8888 });
 });
