@@ -12,11 +12,13 @@
           "name": "Archive",
           "extensions": [
             "zip",
-            "rar"
+            "rar",
+            "dem",
+            "gz"
           ]
         },
         "required": true,
-        "description": "Path to zip/rar archive containing .dem files"
+        "description": "Path to a .dem file, .dem.gz file, or zip/rar archive containing .dem files"
       },
       {
         "name": "outputPath",
@@ -115,6 +117,7 @@
           "name": "Demo / Archive",
           "extensions": [
             "dem",
+            "gz",
             "zip",
             "rar"
           ]

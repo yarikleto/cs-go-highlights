@@ -2,7 +2,7 @@
   {
     "id": "extract",
     "name": "Extract Demos",
-    "description": "Unpack .dem demo files from a zip or rar archive so they can be analyzed. Also accepts a single .dem file directly.",
+    "description": "Unpack .dem demo files from a zip or rar archive so they can be analyzed. Also accepts a single .dem or .dem.gz file directly.",
     "category": "Utility",
     "options": [
       {
@@ -13,11 +13,13 @@
           "name": "Archive",
           "extensions": [
             "zip",
-            "rar"
+            "rar",
+            "dem",
+            "gz"
           ]
         },
         "required": true,
-        "description": "Path to archive containing demo files"
+        "description": "Path to archive or compressed demo containing demo files"
       },
       {
         "name": "output",
