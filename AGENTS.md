@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository contains a Node.js CLI plus an Electron UI for CS:GO highlight videos. Core CLI code lives in `src/`: parsing and recording are in top-level modules such as `parser.js`, `recorder.js`, and `merger.js`; highlight detectors are in `src/detector/`; CLI commands are in `src/cli/commands/`; shared command and workflow schemas are in `src/shared/`. The Electron app lives in `electron/`, with React renderer code in `electron/src/` and main-process code in `electron/main/`. Tests live beside modules as `*.test.js`, with fixtures in `tests/fixtures/`. Documentation is in `docs/`, fonts in `fonts/`, and assets in `textures/`.
+This repository contains a Node.js CLI plus an Electron UI for CS:GO highlight videos. Core CLI code lives in `src/`: parsing and recording are in top-level modules such as `parser.js`, `recorder.js`, and `merger.js`; highlight detectors are in `src/detector/`; CLI commands are in `src/cli/commands/`; shared command and workflow schemas are in `src/shared/`. The Electron app lives in `ui/`, with React renderer code in `ui/src/` and main-process code in `ui/main/`. Tests live beside modules as `*.test.js`, with fixtures in `tests/fixtures/`. Documentation is in `docs/`, fonts in `fonts/`, and assets in `textures/`.
 
 ## Build, Test, and Development Commands
 
@@ -25,7 +25,7 @@ Tests use `node:test` with `node:assert/strict`. Name test files `*.test.js` nea
 
 ## Commit & Pull Request Guidelines
 
-Recent history uses short, imperative or dependency-focused subjects, for example `Bump axios from 1.15.0 to 1.16.0 in /electron`, plus GitHub merge commits. Keep commit subjects concise and scoped. Pull requests should include a description, commands run, linked issues when relevant, and screenshots or short clips for Electron UI changes.
+Recent history uses short, imperative or dependency-focused subjects, for example `Bump axios from 1.15.0 to 1.16.0 in /ui`, plus GitHub merge commits. Keep commit subjects concise and scoped. Pull requests should include a description, commands run, linked issues when relevant, and screenshots or short clips for Electron UI changes.
 
 ## Security & Configuration Tips
 

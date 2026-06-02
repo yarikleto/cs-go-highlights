@@ -8,10 +8,10 @@
     "csgo-highlights": "src/index.js"
   },
   "scripts": {
-    "postinstall": "cd electron && npm install",
+    "postinstall": "cd ui && npm install",
     "start": "node src/index.js",
-    "dev": "npm run dev --prefix electron",
-    "build": "npm run build --prefix electron",
+    "dev": "npm run dev --prefix ui",
+    "build": "npm run build --prefix ui",
     "test": "node --test \"src/**/*.test.js\""
   },
   "engines": {
