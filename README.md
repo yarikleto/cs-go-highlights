@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/yarikleto/cs-go-highlights/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node.js">
+  <img src="https://img.shields.io/badge/node-22.12%2B-brightgreen.svg" alt="Node.js">
   <img src="https://img.shields.io/badge/platform-Windows%20only-lightgrey.svg" alt="Platform">
   <img src="https://img.shields.io/badge/electron-41-blue.svg" alt="Electron">
 </p>
@@ -29,7 +29,7 @@
 
 | Dependency | Description |
 |------------|-------------|
-| **[Node.js](https://nodejs.org/)** (v18+) | Runtime |
+| **[Node.js](https://nodejs.org/)** (v22.12+) | Runtime |
 | **[FFmpeg](https://ffmpeg.org/)** | Video encoding — must be in PATH |
 | **[HLAE](https://www.advancedfx.org/)** | Half-Life Advanced Effects — video capture |
 | **CS:GO Legacy** | HLAE does not support CS2. Install via Steam: CS2 → Properties → Betas → `csgo_legacy` |

@@ -5,6 +5,9 @@
   "author": "Yarik Leto",
   "license": "MIT",
   "main": "main/index.js",
+  "engines": {
+    "node": ">=22.12 <23"
+  },
   "scripts": {
     "dev": "concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
