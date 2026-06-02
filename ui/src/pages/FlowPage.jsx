@@ -3,29 +3,32 @@ import { useParams } from 'react-router-dom';
 import {
   Box,
   Typography,
-  TextField,
   Button,
   Paper,
-  IconButton,
-  InputAdornment,
   LinearProgress,
   Alert,
   Stepper,
   Step,
   StepLabel,
-  StepContent,
   Chip,
 } from '@mui/material';
 import {
   PlayArrow as PlayIcon,
   Stop as StopIcon,
-  InsertDriveFile as FileIcon,
-  SaveAlt as SaveIcon,
   Clear as ClearIcon,
   CheckCircle as DoneIcon,
   Error as ErrorIcon,
   RadioButtonUnchecked as PendingIcon,
 } from '@mui/icons-material';
+import CommandFieldsPanel from '../components/commands/CommandFieldsPanel';
+import ExecutionOutput from '../components/commands/ExecutionOutput';
+import { useElectronApi } from '../hooks/commands/useElectronApi';
+
+function formatFlowResult(result) {
+  return result.success
+    ? 'Flow completed successfully!'
+    : result.error || 'Flow failed';
+}
 
 function FlowPage() {
   const { flowId } = useParams();
@@ -37,55 +40,86 @@ function FlowPage() {
   const [logs, setLogs] = useState([]);
   const [result, setResult] = useState(null);
   const logsEndRef = useRef(null);
+  const {
+    apiError,
+    setApiError,
+    clearApiError,
+    getApi,
+    handleApiError,
+    callApi,
+  } = useElectronApi();
+  const showApiError = apiError && apiError !== result?.error;
 
   useEffect(() => {
-    if (!window.electronAPI) return;
-    window.electronAPI.getFlows().then((flows) => {
-      const f = flows.find((fl) => fl.id === flowId);
-      setFlow(f);
-      if (f) {
-        const defaults = {};
-        f.params?.forEach((p) => {
-          if (p.default !== undefined) defaults[p.name] = p.default;
-        });
-        setParams(defaults);
-        setStepStatuses(f.steps.map(() => 'pending'));
+    let isMounted = true;
+
+    const loadFlow = async () => {
+      setFlow(null);
+      const flows = await callApi((api) => api.getFlows(), 'Failed to load flows');
+      if (!isMounted || !flows) return;
+
+      const nextFlow = flows.find((fl) => fl.id === flowId);
+      if (!nextFlow) {
+        setApiError(`Flow "${flowId}" was not found.`);
+        return;
       }
-    });
-  }, [flowId]);
+
+      const defaults = {};
+      nextFlow.params?.forEach((param) => {
+        if (param.default !== undefined) defaults[param.name] = param.default;
+      });
+
+      clearApiError();
+      setFlow(nextFlow);
+      setParams(defaults);
+      setStepStatuses(nextFlow.steps.map(() => 'pending'));
+    };
+
+    loadFlow();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [flowId, callApi, clearApiError, setApiError]);
 
   useEffect(() => {
-    if (!window.electronAPI) return;
+    const api = getApi('Electron API is unavailable. Flow output cannot be received.');
+    if (!api) return undefined;
 
-    const unsubs = [
-      window.electronAPI.onFlowStepStart((data) => {
-        setCurrentStep(data.index);
-        setStepStatuses((prev) => {
-          const next = [...prev];
-          next[data.index] = 'running';
-          return next;
-        });
-        setLogs((prev) => [...prev, { type: 'step-header', text: `\n━━━ Step ${data.index + 1}/${data.total}: ${data.name} ━━━\n` }]);
-      }),
-      window.electronAPI.onFlowOutput((data) => {
-        setLogs((prev) => [...prev, data]);
-      }),
-      window.electronAPI.onFlowStepComplete((data) => {
-        setStepStatuses((prev) => {
-          const next = [...prev];
-          next[data.index] = data.success ? 'done' : 'failed';
-          return next;
-        });
-      }),
-      window.electronAPI.onFlowComplete((data) => {
-        setRunning(false);
-        setCurrentStep(-1);
-        setResult(data);
-      }),
-    ];
+    try {
+      const unsubs = [
+        api.onFlowStepStart((data) => {
+          setCurrentStep(data.index);
+          setStepStatuses((prev) => {
+            const next = [...prev];
+            next[data.index] = 'running';
+            return next;
+          });
+          setLogs((prev) => [...prev, { type: 'step-header', text: `\n━━━ Step ${data.index + 1}/${data.total}: ${data.name} ━━━\n` }]);
+        }),
+        api.onFlowOutput((data) => {
+          setLogs((prev) => [...prev, data]);
+        }),
+        api.onFlowStepComplete((data) => {
+          setStepStatuses((prev) => {
+            const next = [...prev];
+            next[data.index] = data.success ? 'done' : 'failed';
+            return next;
+          });
+        }),
+        api.onFlowComplete((data) => {
+          setRunning(false);
+          setCurrentStep(-1);
+          setResult(data);
+        }),
+      ];
 
-    return () => unsubs.forEach((fn) => fn());
-  }, []);
+      return () => unsubs.forEach((fn) => fn?.());
+    } catch (error) {
+      handleApiError(error, 'Failed to subscribe to flow output');
+      return undefined;
+    }
+  }, [getApi, handleApiError]);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -95,27 +129,45 @@ function FlowPage() {
     setParams((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSelectFile = async (name, filters) => {
-    const path = await window.electronAPI.selectFile(filters);
-    if (path) handleParamChange(name, path);
-  };
+  const handleBrowse = async (field, browseType) => {
+    const fallback = `Failed to select ${field.label || field.name}`;
+    const path = await callApi((api) => {
+      if (browseType === 'folder') return api.selectFolder();
+      if (browseType === 'save-file') return api.selectSaveFile(field.filters);
+      return api.selectFile(field.filters);
+    }, fallback);
 
-  const handleSelectSaveFile = async (name, filters) => {
-    const path = await window.electronAPI.selectSaveFile(filters);
-    if (path) handleParamChange(name, path);
+    if (path) {
+      handleParamChange(field.name, path);
+    }
   };
 
   const handleRun = async () => {
+    const api = getApi();
+    if (!api) return;
+
+    clearApiError();
     setLogs([]);
     setResult(null);
     setStepStatuses(flow.steps.map(() => 'pending'));
     setCurrentStep(-1);
     setRunning(true);
-    await window.electronAPI.runFlow(flowId, params);
+
+    try {
+      const response = await api.runFlow(flowId, params);
+      if (!response?.started) {
+        throw new Error(response?.error || 'Flow did not start');
+      }
+    } catch (error) {
+      const message = handleApiError(error, 'Failed to start flow');
+      setRunning(false);
+      setCurrentStep(-1);
+      setResult({ success: false, error: message });
+    }
   };
 
   const handleStop = async () => {
-    await window.electronAPI.stopFlow();
+    await callApi((api) => api.stopFlow(), 'Failed to stop flow');
   };
 
   const handleClear = () => {
@@ -123,96 +175,15 @@ function FlowPage() {
     setResult(null);
     setStepStatuses(flow?.steps.map(() => 'pending') || []);
     setCurrentStep(-1);
+    clearApiError();
   };
 
   const canRun = () => {
     if (!flow) return false;
-    for (const p of flow.params || []) {
-      if (p.required && !params[p.name]) return false;
+    for (const param of flow.params || []) {
+      if (param.required && !params[param.name]) return false;
     }
     return true;
-  };
-
-  const renderParam = (param) => {
-    const value = params[param.name] ?? '';
-
-    if (param.type === 'file') {
-      return (
-        <TextField
-          key={param.name}
-          label={param.label || param.name}
-          value={value}
-          onChange={(e) => handleParamChange(param.name, e.target.value)}
-          fullWidth
-          required={param.required}
-          helperText={param.description}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton onClick={() => handleSelectFile(param.name, param.filters)}>
-                  <FileIcon />
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-        />
-      );
-    }
-
-    if (param.type === 'save-file') {
-      return (
-        <TextField
-          key={param.name}
-          label={param.label || param.name}
-          value={value}
-          onChange={(e) => handleParamChange(param.name, e.target.value)}
-          fullWidth
-          required={param.required}
-          helperText={param.description}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton onClick={() => handleSelectSaveFile(param.name, param.filters)}>
-                  <SaveIcon />
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-        />
-      );
-    }
-
-    if (param.type === 'number') {
-      return (
-        <TextField
-          key={param.name}
-          label={param.label || param.name}
-          value={value}
-          onChange={(e) => handleParamChange(param.name, e.target.value === '' ? '' : Number(e.target.value))}
-          fullWidth
-          required={param.required}
-          helperText={param.description}
-          type="number"
-          inputProps={{
-            min: param.min,
-            max: param.max,
-            step: param.step || 1,
-          }}
-        />
-      );
-    }
-
-    return (
-      <TextField
-        key={param.name}
-        label={param.label || param.name}
-        value={value}
-        onChange={(e) => handleParamChange(param.name, e.target.value)}
-        fullWidth
-        required={param.required}
-        helperText={param.description}
-      />
-    );
   };
 
   const getStepIcon = (status) => {
@@ -228,6 +199,11 @@ function FlowPage() {
     return (
       <Box sx={{ p: 4 }}>
         <Typography>Loading...</Typography>
+        {apiError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {apiError}
+          </Alert>
+        )}
       </Box>
     );
   }
@@ -250,16 +226,21 @@ function FlowPage() {
         </Typography>
       </Box>
 
+      {showApiError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {apiError}
+        </Alert>
+      )}
+
       {/* Params */}
       {flow.params?.length > 0 && (
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Parameters
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {flow.params.map(renderParam)}
-          </Box>
-        </Paper>
+        <CommandFieldsPanel
+          title="Parameters"
+          fields={flow.params}
+          values={params}
+          onChange={handleParamChange}
+          onBrowse={handleBrowse}
+        />
       )}
 
       {/* Steps overview */}
@@ -337,54 +318,12 @@ function FlowPage() {
         )}
       </Box>
 
-      {/* Result */}
-      {result && (
-        <Alert
-          severity={result.success ? 'success' : 'error'}
-          sx={{ mb: 2 }}
-        >
-          {result.success
-            ? 'Flow completed successfully!'
-            : result.error || 'Flow failed'}
-        </Alert>
-      )}
-
-      {/* Logs */}
-      {logs.length > 0 && (
-        <Paper
-          sx={{
-            flex: 1,
-            minHeight: 200,
-            overflow: 'auto',
-            bgcolor: '#0d0d0d',
-            p: 2,
-            fontFamily: 'monospace',
-            fontSize: '0.85rem',
-          }}
-        >
-          {logs.map((log, i) => (
-            <Box
-              key={i}
-              component="pre"
-              sx={{
-                m: 0,
-                color:
-                  log.type === 'step-header'
-                    ? '#64b5f6'
-                    : log.type === 'stderr'
-                    ? '#ff6b6b'
-                    : '#e0e0e0',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                fontWeight: log.type === 'step-header' ? 'bold' : 'normal',
-              }}
-            >
-              {log.text}
-            </Box>
-          ))}
-          <div ref={logsEndRef} />
-        </Paper>
-      )}
+      <ExecutionOutput
+        result={result}
+        logs={logs}
+        logsEndRef={logsEndRef}
+        formatResult={formatFlowResult}
+      />
     </Box>
   );
 }

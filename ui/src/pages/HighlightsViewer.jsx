@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -30,6 +30,21 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useViewerContext } from '../context/ViewerContext';
+import {
+  filterHighlights,
+  formatDistanceMeters,
+  formatDuration,
+  formatKills,
+  formatOptionalValue,
+  formatRank,
+  getHighlightsFileType,
+  getUniqueHighlightMaps,
+  getUniqueHighlightTypes,
+  hasHighlightValue,
+  hasValue,
+  normalizeHighlights,
+  sortHighlights,
+} from '../lib/highlightsViewerData';
 
 const TYPE_COLORS = {
   'kill-series': 'primary',
@@ -92,92 +107,20 @@ function HighlightsViewer() {
     }));
   };
 
-  // Detect file type
-  const getFileType = () => {
-    if (data?.fileType) return data.fileType;
-    // Fallback detection for older files
-    if (data?.topCount) return 'highlights-top';
-    if (data?.postprocessedAt) return 'highlights-postprocess';
-    if (data?.demos) return 'highlights';
-    return 'unknown';
-  };
-
-  const fileType = data ? getFileType() : null;
-
-  const extractMapFromFilename = (filename) => {
-    const match = filename?.match(/de_[a-z0-9_]+/i);
-    return match ? match[0] : null;
-  };
-
-  // Get all highlights from different formats
-  const getAllHighlights = () => {
-    if (!data) return [];
-    
-    const highlights = [];
-    
-    // Format with flat highlights array (top, postprocess with demos)
-    if (data.fileType === 'highlights-top' || 
-        (data.highlights && Array.isArray(data.highlights) && !data.demos)) {
-      data.highlights.forEach(h => {
-        highlights.push({
-          ...h,
-          demoFile: h.demoFile,
-          map: h.map || extractMapFromFilename(h.demoFile),
-        });
-      });
-    }
-    // Format with demos[].highlights[] (highlights, postprocess)
-    else if (data.demos && Array.isArray(data.demos)) {
-      data.demos.forEach(demo => {
-        const demoMap = demo.map || extractMapFromFilename(demo.file);
-        demo.highlights?.forEach(h => {
-          highlights.push({
-            ...h,
-            demoFile: demo.file || h.demoFile,
-            map: h.map || demoMap || extractMapFromFilename(h.demoFile),
-          });
-        });
-      });
-    }
-    
-    return highlights;
-  };
-
-  // Apply filters
-  const getFilteredHighlights = () => {
-    let highlights = getAllHighlights();
-    
-    if (typeFilter) {
-      highlights = highlights.filter(h => h.type === typeFilter);
-    }
-    if (playerFilter) {
-      highlights = highlights.filter(h => 
-        h.player?.name?.toLowerCase().includes(playerFilter.toLowerCase()) ||
-        h.player?.steamId?.includes(playerFilter)
-      );
-    }
-    if (demoFilter) {
-      highlights = highlights.filter(h => 
-        h.demoFile?.toLowerCase().includes(demoFilter.toLowerCase())
-      );
-    }
-    if (mapFilter) {
-      highlights = highlights.filter(h => h.map === mapFilter);
-    }
-    
-    return highlights;
-  };
-
-  // Get unique values for filters
-  const getUniqueTypes = () => {
-    const types = new Set(getAllHighlights().map(h => h.type));
-    return Array.from(types).sort();
-  };
-
-  const getUniqueMaps = () => {
-    const maps = new Set(getAllHighlights().map(h => h.map).filter(Boolean));
-    return Array.from(maps).sort();
-  };
+  const fileType = useMemo(
+    () => data ? getHighlightsFileType(data) : null,
+    [data]
+  );
+  const allHighlights = useMemo(() => normalizeHighlights(data), [data]);
+  const uniqueTypes = useMemo(
+    () => getUniqueHighlightTypes(allHighlights),
+    [allHighlights]
+  );
+  const uniqueMaps = useMemo(
+    () => getUniqueHighlightMaps(allHighlights),
+    [allHighlights]
+  );
+  const hasDemos = Array.isArray(data?.demos);
 
   const handleSort = (column) => {
     if (sortBy === column) {
@@ -188,43 +131,32 @@ function HighlightsViewer() {
     }
   };
 
-  const getSortValue = (h, column) => {
-    switch (column) {
-      case 'rank': return h.rank ?? Infinity;
-      case 'type': return h.type || '';
-      case 'player': return h.player?.name?.toLowerCase() || '';
-      case 'kills': return h.killCount || h.kills?.length || 0;
-      case 'points': return h.points || 0;
-      case 'duration': return h.durationSeconds || 0;
-      case 'map': return h.map || '';
-      case 'demo': return h.demoFile || '';
-      case 'tick': return h.startTick || 0;
-      default: return 0;
-    }
-  };
-
-  const sortHighlights = (highlights) => {
-    if (!sortBy) return highlights;
-    return [...highlights].sort((a, b) => {
-      const va = getSortValue(a, sortBy);
-      const vb = getSortValue(b, sortBy);
-      const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
-      return sortDir === 'asc' ? cmp : -cmp;
+  const filteredHighlights = useMemo(() => {
+    const filtered = filterHighlights(allHighlights, {
+      typeFilter,
+      playerFilter,
+      demoFilter,
+      mapFilter,
     });
-  };
 
-  const filteredHighlights = sortHighlights(getFilteredHighlights());
-
-  const formatDuration = (seconds) => {
-    if (!seconds) return '-';
-    return `${seconds.toFixed(1)}s`;
-  };
-
-  const formatKills = (highlight) => {
-    if (highlight.killCount) return highlight.killCount;
-    if (highlight.kills?.length) return highlight.kills.length;
-    return '-';
-  };
+    return sortHighlights(filtered, sortBy, sortDir);
+  }, [
+    allHighlights,
+    typeFilter,
+    playerFilter,
+    demoFilter,
+    mapFilter,
+    sortBy,
+    sortDir,
+  ]);
+  const showRankColumn = useMemo(
+    () => hasHighlightValue(filteredHighlights, 'rank'),
+    [filteredHighlights]
+  );
+  const showPointsColumn = useMemo(
+    () => hasHighlightValue(filteredHighlights, 'points'),
+    [filteredHighlights]
+  );
 
   return (
     <Box sx={{ p: 4, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -291,14 +223,14 @@ function HighlightsViewer() {
           <Grid container spacing={2}>
             <Grid item xs={3}>
               <Typography variant="caption" color="text.secondary">Total Highlights</Typography>
-              <Typography variant="h5">{getAllHighlights().length}</Typography>
+              <Typography variant="h5">{allHighlights.length}</Typography>
             </Grid>
             <Grid item xs={3}>
               <Typography variant="caption" color="text.secondary">
-                {data.demos ? 'Demos' : 'Source'}
+                {hasDemos ? 'Demos' : 'Source'}
               </Typography>
               <Typography variant="h5">
-                {data.demos?.length || data.sourceFile || '-'}
+                {hasDemos ? data.demos.length : data.sourceFile || '-'}
               </Typography>
             </Grid>
             <Grid item xs={3}>
@@ -307,9 +239,9 @@ function HighlightsViewer() {
             </Grid>
             <Grid item xs={3}>
               <Typography variant="caption" color="text.secondary">
-                {data.topCount ? 'Top Count' : 'Version'}
+                {hasValue(data.topCount) ? 'Top Count' : 'Version'}
               </Typography>
-              <Typography variant="h5">{data.topCount || data.version || '1'}</Typography>
+              <Typography variant="h5">{data.topCount ?? data.version ?? '1'}</Typography>
             </Grid>
           </Grid>
         </Paper>
@@ -329,7 +261,7 @@ function HighlightsViewer() {
                 size="small"
               >
                 <MenuItem value="">All</MenuItem>
-                {getUniqueTypes().map(type => (
+                {uniqueTypes.map(type => (
                   <MenuItem key={type} value={type}>{type}</MenuItem>
                 ))}
               </Select>
@@ -352,7 +284,7 @@ function HighlightsViewer() {
                 size="small"
               >
                 <MenuItem value="">All</MenuItem>
-                {getUniqueMaps().map(map => (
+                {uniqueMaps.map(map => (
                   <MenuItem key={map} value={map}>{map}</MenuItem>
                 ))}
               </Select>
@@ -384,7 +316,7 @@ function HighlightsViewer() {
             <TableHead>
               <TableRow>
                 <TableCell width={40}></TableCell>
-                {filteredHighlights.some(h => h.rank) && (
+                {showRankColumn && (
                   <TableCell sortDirection={sortBy === 'rank' ? sortDir : false}>
                     <TableSortLabel active={sortBy === 'rank'} direction={sortBy === 'rank' ? sortDir : 'asc'} onClick={() => handleSort('rank')}>
                       Rank
@@ -406,7 +338,7 @@ function HighlightsViewer() {
                     Kills
                   </TableSortLabel>
                 </TableCell>
-                {filteredHighlights.some(h => h.points) && (
+                {showPointsColumn && (
                   <TableCell sortDirection={sortBy === 'points' ? sortDir : false}>
                     <TableSortLabel active={sortBy === 'points'} direction={sortBy === 'points' ? sortDir : 'asc'} onClick={() => handleSort('points')}>
                       Points
@@ -448,9 +380,9 @@ function HighlightsViewer() {
                         {expandedRows[h.id] ? <CollapseIcon /> : <ExpandIcon />}
                       </IconButton>
                     </TableCell>
-                    {filteredHighlights.some(hh => hh.rank) && (
+                    {showRankColumn && (
                       <TableCell>
-                        <Chip label={`#${h.rank}`} size="small" color="success" />
+                        <Chip label={formatRank(h.rank)} size="small" color="success" />
                       </TableCell>
                     )}
                     <TableCell>
@@ -461,14 +393,14 @@ function HighlightsViewer() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Tooltip title={h.player?.steamId || ''}>
+                      <Tooltip title={hasValue(h.player?.steamId) ? String(h.player.steamId) : ''}>
                         <span>{h.player?.name || '-'}</span>
                       </Tooltip>
                     </TableCell>
                     <TableCell>{formatKills(h)}</TableCell>
-                    {filteredHighlights.some(hh => hh.points) && (
+                    {showPointsColumn && (
                       <TableCell>
-                        <Chip label={h.points} size="small" variant="outlined" />
+                        <Chip label={formatOptionalValue(h.points)} size="small" variant="outlined" />
                       </TableCell>
                     )}
                     <TableCell>{formatDuration(h.durationSeconds)}</TableCell>
@@ -508,7 +440,7 @@ function HighlightsViewer() {
                             </Grid>
                             <Grid item xs={3}>
                               <Typography variant="caption" color="text.secondary">Steam ID</Typography>
-                              <Typography variant="body2">{h.player?.steamId || '-'}</Typography>
+                              <Typography variant="body2">{formatOptionalValue(h.player?.steamId)}</Typography>
                             </Grid>
                             <Grid item xs={3}>
                               <Typography variant="caption" color="text.secondary">Priority</Typography>
@@ -551,7 +483,7 @@ function HighlightsViewer() {
                                       {kill.airborne && <Chip label="Air" size="small" color="secondary" />}
                                       {kill.isFlick && <Chip label={`Flick ${kill.flickAngle}°`} size="small" color="primary" />}
                                       <Typography variant="caption" color="text.secondary">
-                                        {kill.distance?.toFixed(1)}m
+                                        {formatDistanceMeters(kill.distance)}
                                       </Typography>
                                     </Box>
                                   ))}

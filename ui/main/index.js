@@ -1,31 +1,14 @@
-const { app, BrowserWindow, Menu, protocol, net } = require('electron');
+const { app, BrowserWindow, Menu, protocol } = require('electron');
 const path = require('path');
-const fs = require('fs');
-const { pathToFileURL } = require('url');
 const { setupIPC } = require('./ipc');
 const { stopCommand } = require('./commandRunner');
+const {
+  handleLocalMediaRequests,
+  ignoreAbortedMediaRequestErrors,
+  registerLocalMediaScheme,
+} = require('./services/localMediaProtocol');
 
-// Disable all security restrictions
-app.commandLine.appendSwitch('disable-web-security');
-app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
-
-const MIME_TYPES = {
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
-  '.avi': 'video/x-msvideo', '.mov': 'video/quicktime',
-  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
-  '.flac': 'audio/flac', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
-};
-
-// Suppress harmless "Controller is already closed" errors from aborted media requests
-process.on('uncaughtException', (err) => {
-  if (err.code === 'ERR_INVALID_STATE' && err.message.includes('Controller is already closed')) {
-    // Browser aborted a media range request — safe to ignore
-    return;
-  }
-  console.error('Uncaught exception:', err);
-  // Re-throw non-media errors
-  throw err;
-});
+ignoreAbortedMediaRequestErrors();
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling
 try {
@@ -48,8 +31,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
-      allowRunningInsecureContent: true,
+      webSecurity: true,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -73,73 +55,11 @@ function createWindow() {
   });
 }
 
-// Register custom protocol for serving local media files
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'local-media',
-    privileges: {
-      stream: true,
-      bypassCSP: true,
-      supportFetchAPI: true,
-    },
-  },
-]);
+registerLocalMediaScheme(protocol);
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
-  // Handle local-media:// protocol — all reads via Buffer (no streams)
-  protocol.handle('local-media', (request) => {
-    const raw = request.url;
-    const prefix = 'local-media://play/';
-    let filePath = decodeURIComponent(raw.substring(prefix.length));
-
-    try {
-      const stat = fs.statSync(filePath);
-      const fileSize = stat.size;
-      const ext = path.extname(filePath).toLowerCase();
-      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-      const rangeHeader = request.headers.get('range');
-
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-        if (match) {
-          const start = parseInt(match[1], 10);
-          const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
-          const chunkSize = end - start + 1;
-
-          const buffer = Buffer.alloc(chunkSize);
-          const fd = fs.openSync(filePath, 'r');
-          fs.readSync(fd, buffer, 0, chunkSize, start);
-          fs.closeSync(fd);
-
-          return new Response(buffer, {
-            status: 206,
-            headers: {
-              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-              'Accept-Ranges': 'bytes',
-              'Content-Length': String(chunkSize),
-              'Content-Type': contentType,
-            },
-          });
-        }
-      }
-
-      // No Range — read full file into buffer
-      const buffer = fs.readFileSync(filePath);
-      return new Response(buffer, {
-        status: 200,
-        headers: {
-          'Accept-Ranges': 'bytes',
-          'Content-Length': String(fileSize),
-          'Content-Type': contentType,
-        },
-      });
-    } catch (err) {
-      console.error('[local-media] Error serving:', filePath, err.message);
-      return new Response('File not found', { status: 404 });
-    }
-  });
-
+  handleLocalMediaRequests(protocol);
   setupIPC();
   createWindow();
 

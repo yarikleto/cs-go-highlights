@@ -1,88 +1,99 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
-  TextField,
   Button,
-  Paper,
-  Divider,
   Alert,
   Snackbar,
-  IconButton,
-  InputAdornment,
-  Grid,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  FormControlLabel,
-  Checkbox,
 } from '@mui/material';
 import {
   Save as SaveIcon,
   Refresh as RefreshIcon,
-  FolderOpen as FolderIcon,
-  InsertDriveFile as FileIcon,
-  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
+import ConfigSection from '../components/config/ConfigSection';
+import { CONFIG_SECTIONS } from '../components/config/configSections';
 
 function GlobalConfig() {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [expanded, setExpanded] = useState(['paths', 'detection']);
 
-  useEffect(() => {
-    loadConfig();
-  }, []);
-
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
+
     try {
       const cfg = await window.electronAPI.getConfig();
       setConfig(cfg);
     } catch (e) {
-      setSnackbar({ open: true, message: 'Failed to load config', severity: 'error' });
+      const message = e.message ? `Failed to load config: ${e.message}` : 'Failed to load config';
+      setLoadError(message);
+      setSnackbar({ open: true, message, severity: 'error' });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
 
   const saveConfig = async () => {
+    if (!config) {
+      return;
+    }
+
     setSaving(true);
+
     try {
       const result = await window.electronAPI.saveConfig(config);
-      if (result.success) {
+      if (result?.success) {
         setSnackbar({ open: true, message: 'Config saved successfully!', severity: 'success' });
       } else {
-        throw new Error(result.error);
+        throw new Error(result?.error || 'Unknown save error');
       }
     } catch (e) {
-      setSnackbar({ open: true, message: `Failed to save: ${e.message}`, severity: 'error' });
+      const message = e.message ? `Failed to save: ${e.message}` : 'Failed to save config';
+      setSnackbar({ open: true, message, severity: 'error' });
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handleChange = (section, key, value) => {
     setConfig((prev) => ({
       ...prev,
       [section]: {
-        ...prev[section],
+        ...(prev[section] ?? {}),
         [key]: value,
       },
     }));
   };
 
   const handleSelectFolder = async (section, key) => {
-    const path = await window.electronAPI.selectFolder();
-    if (path) {
-      handleChange(section, key, path);
+    try {
+      const path = await window.electronAPI.selectFolder();
+      if (path) {
+        handleChange(section, key, path);
+      }
+    } catch (e) {
+      const message = e.message ? `Failed to select folder: ${e.message}` : 'Failed to select folder';
+      setSnackbar({ open: true, message, severity: 'error' });
     }
   };
 
   const handleSelectFile = async (section, key) => {
-    const path = await window.electronAPI.selectFile();
-    if (path) {
-      handleChange(section, key, path);
+    try {
+      const path = await window.electronAPI.selectFile();
+      if (path) {
+        handleChange(section, key, path);
+      }
+    } catch (e) {
+      const message = e.message ? `Failed to select file: ${e.message}` : 'Failed to select file';
+      setSnackbar({ open: true, message, severity: 'error' });
     }
   };
 
@@ -94,10 +105,31 @@ function GlobalConfig() {
     }
   };
 
-  if (loading || !config) {
+  if (loading) {
     return (
       <Box sx={{ p: 4 }}>
         <Typography>Loading config...</Typography>
+      </Box>
+    );
+  }
+
+  if (!config) {
+    return (
+      <Box sx={{ p: 4 }}>
+        <Alert
+          severity="error"
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={loadConfig}
+            >
+              Retry
+            </Button>
+          }
+        >
+          {loadError || 'Failed to load config'}
+        </Alert>
       </Box>
     );
   }
@@ -119,6 +151,7 @@ function GlobalConfig() {
             variant="outlined"
             startIcon={<RefreshIcon />}
             onClick={loadConfig}
+            disabled={loading || saving}
           >
             Reset
           </Button>
@@ -126,287 +159,25 @@ function GlobalConfig() {
             variant="contained"
             startIcon={<SaveIcon />}
             onClick={saveConfig}
-            disabled={saving}
+            disabled={saving || loading}
           >
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </Box>
       </Box>
 
-      {/* Paths Section */}
-      <Accordion 
-        expanded={expanded.includes('paths')} 
-        onChange={handleAccordion('paths')}
-      >
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Paths</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Demos Folder"
-                value={config.paths?.demos || ''}
-                onChange={(e) => handleChange('paths', 'demos', e.target.value)}
-                fullWidth
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => handleSelectFolder('paths', 'demos')}>
-                        <FolderIcon />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Output Folder"
-                value={config.paths?.output || ''}
-                onChange={(e) => handleChange('paths', 'output', e.target.value)}
-                fullWidth
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => handleSelectFolder('paths', 'output')}>
-                        <FolderIcon />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="HLAE Executable"
-                value={config.paths?.hlae || ''}
-                onChange={(e) => handleChange('paths', 'hlae', e.target.value)}
-                fullWidth
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => handleSelectFile('paths', 'hlae')}>
-                        <FileIcon />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="CS:GO Folder"
-                value={config.paths?.csgo || ''}
-                onChange={(e) => handleChange('paths', 'csgo', e.target.value)}
-                fullWidth
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton onClick={() => handleSelectFolder('paths', 'csgo')}>
-                        <FolderIcon />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Grid>
-          </Grid>
-        </AccordionDetails>
-      </Accordion>
-
-      {/* Detection Section */}
-      <Accordion 
-        expanded={expanded.includes('detection')} 
-        onChange={handleAccordion('detection')}
-      >
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Detection</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="Max Delay Between Kills (s)"
-                type="number"
-                value={config.detection?.maxDelay || 15}
-                onChange={(e) => handleChange('detection', 'maxDelay', parseInt(e.target.value))}
-                fullWidth
-                helperText="Maximum seconds between kills for a series"
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="Min Series Kills"
-                type="number"
-                value={config.detection?.minSeriesKills || 3}
-                onChange={(e) => handleChange('detection', 'minSeriesKills', parseInt(e.target.value))}
-                fullWidth
-                helperText="Minimum kills for a kill series"
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="Min Clutch Enemies"
-                type="number"
-                value={config.detection?.minEnemies || 2}
-                onChange={(e) => handleChange('detection', 'minEnemies', parseInt(e.target.value))}
-                fullWidth
-                helperText="Minimum enemies for clutch detection"
-              />
-            </Grid>
-          </Grid>
-        </AccordionDetails>
-      </Accordion>
-
-      {/* Padding Section */}
-      <Accordion 
-        expanded={expanded.includes('padding')} 
-        onChange={handleAccordion('padding')}
-      >
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Padding</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Padding Before (s)"
-                type="number"
-                value={config.padding?.before || 4}
-                onChange={(e) => handleChange('padding', 'before', parseInt(e.target.value))}
-                fullWidth
-                helperText="Seconds before highlight starts"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Padding After (s)"
-                type="number"
-                value={config.padding?.after || 5}
-                onChange={(e) => handleChange('padding', 'after', parseInt(e.target.value))}
-                fullWidth
-                helperText="Seconds after highlight ends"
-              />
-            </Grid>
-          </Grid>
-        </AccordionDetails>
-      </Accordion>
-
-      {/* Speedup Section */}
-      <Accordion 
-        expanded={expanded.includes('speedup')} 
-        onChange={handleAccordion('speedup')}
-      >
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Speedup</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="Start Delay (s)"
-                type="number"
-                value={config.speedup?.startDelay || 2}
-                onChange={(e) => handleChange('speedup', 'startDelay', parseInt(e.target.value))}
-                fullWidth
-                helperText="Delay before first speedup"
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="Buffer Around Kills (s)"
-                type="number"
-                value={config.speedup?.bufferAroundKills || 2}
-                onChange={(e) => handleChange('speedup', 'bufferAroundKills', parseInt(e.target.value))}
-                fullWidth
-                helperText="Normal speed buffer around action"
-              />
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField
-                label="Min Gap Duration (s)"
-                type="number"
-                value={config.speedup?.minGapDuration || 4}
-                onChange={(e) => handleChange('speedup', 'minGapDuration', parseInt(e.target.value))}
-                fullWidth
-                helperText="Minimum gap to apply speedup"
-              />
-            </Grid>
-          </Grid>
-        </AccordionDetails>
-      </Accordion>
-
-      {/* Slowmo Section */}
-      <Accordion 
-        expanded={expanded.includes('slowmo')} 
-        onChange={handleAccordion('slowmo')}
-      >
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Slow Motion</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Duration (s)"
-                type="number"
-                value={config.slowmo?.duration || 1}
-                onChange={(e) => handleChange('slowmo', 'duration', parseFloat(e.target.value))}
-                fullWidth
-                inputProps={{ step: 0.1 }}
-                helperText="Slowmo effect duration"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Slowmo Factor"
-                type="number"
-                value={config.slowmo?.factor || 0.6}
-                onChange={(e) => handleChange('slowmo', 'factor', parseFloat(e.target.value))}
-                fullWidth
-                inputProps={{ step: 0.1, min: 0.1, max: 1 }}
-                helperText="Speed factor (0.6 = 60% speed)"
-              />
-            </Grid>
-          </Grid>
-        </AccordionDetails>
-      </Accordion>
-
-      {/* Postprocess Section */}
-      <Accordion 
-        expanded={expanded.includes('postprocess')} 
-        onChange={handleAccordion('postprocess')}
-      >
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Postprocess</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                label="Speedup Multiplier"
-                type="number"
-                value={config.postprocess?.speedupMultiplier || 3}
-                onChange={(e) => handleChange('postprocess', 'speedupMultiplier', parseInt(e.target.value))}
-                fullWidth
-                helperText="Speed multiplier for gaps"
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={config.postprocess?.showOverlay ?? true}
-                    onChange={(e) => handleChange('postprocess', 'showOverlay', e.target.checked)}
-                  />
-                }
-                label="Show Overlay (player name, highlight type)"
-              />
-            </Grid>
-          </Grid>
-        </AccordionDetails>
-      </Accordion>
+      {CONFIG_SECTIONS.map((section) => (
+        <ConfigSection
+          key={section.id}
+          section={section}
+          config={config}
+          expanded={expanded.includes(section.id)}
+          onAccordionChange={handleAccordion}
+          onFieldChange={handleChange}
+          onSelectFolder={handleSelectFolder}
+          onSelectFile={handleSelectFile}
+        />
+      ))}
 
       {/* Snackbar */}
       <Snackbar

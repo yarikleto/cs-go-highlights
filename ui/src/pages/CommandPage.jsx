@@ -3,35 +3,49 @@ import { useParams } from 'react-router-dom';
 import {
   Box,
   Typography,
-  TextField,
   Button,
-  Paper,
-  FormControlLabel,
-  Checkbox,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  IconButton,
   LinearProgress,
   Alert,
-  InputAdornment,
   Chip,
 } from '@mui/material';
 import {
   PlayArrow as PlayIcon,
   Stop as StopIcon,
-  FolderOpen as FolderIcon,
-  InsertDriveFile as FileIcon,
   Clear as ClearIcon,
 } from '@mui/icons-material';
+import CommandFieldsPanel from '../components/commands/CommandFieldsPanel';
+import ExecutionOutput from '../components/commands/ExecutionOutput';
 import { useCommandContext } from '../context/CommandContext';
+import { useElectronApi } from '../hooks/commands/useElectronApi';
+
+function formatCommandResult(result) {
+  if (result.success) return 'Command completed successfully!';
+
+  const baseMessage = result.code === null || result.code === undefined
+    ? 'Command failed'
+    : `Command failed with exit code ${result.code}`;
+
+  return result.error ? `${baseMessage}: ${result.error}` : baseMessage;
+}
+
+function parseCommandNumber(value) {
+  return value === '' ? '' : parseFloat(value);
+}
 
 function CommandPage() {
   const { commandId } = useParams();
   const [command, setCommand] = useState(null);
   const logsEndRef = useRef(null);
   const initializedRef = useRef({});
+  const runningCommandRef = useRef(null);
+  const {
+    apiError,
+    setApiError,
+    clearApiError,
+    getApi,
+    handleApiError,
+    callApi,
+  } = useElectronApi();
   
   // Use context for persistent state
   const {
@@ -52,52 +66,83 @@ function CommandPage() {
   const logs = getLogs(commandId);
   const result = getResult(commandId);
   const isRunning = isCommandRunning(commandId);
+  const showApiError = apiError && apiError !== result?.error;
 
   // Load command metadata and initialize defaults
   useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.getCommands().then((commands) => {
-        const cmd = commands.find((c) => c.id === commandId);
-        setCommand(cmd);
-        
-        // Initialize options with defaults only once per command
-        if (cmd && !initializedRef.current[commandId]) {
-          const defaults = {};
-          cmd.options?.forEach((opt) => {
-            if (opt.default !== undefined) {
-              defaults[opt.name] = opt.default;
-            }
-          });
-          initializeOptions(commandId, defaults);
-          initializedRef.current[commandId] = true;
-        }
-      });
-    }
-  }, [commandId, initializeOptions]);
+    let isMounted = true;
+
+    const loadCommand = async () => {
+      setCommand(null);
+      const commands = await callApi((api) => api.getCommands(), 'Failed to load commands');
+      if (!isMounted || !commands) return;
+
+      const cmd = commands.find((c) => c.id === commandId);
+      if (!cmd) {
+        setApiError(`Command "${commandId}" was not found.`);
+        return;
+      }
+
+      clearApiError();
+      setCommand(cmd);
+
+      // Initialize options with defaults only once per command
+      if (!initializedRef.current[commandId]) {
+        const defaults = {};
+        cmd.options?.forEach((opt) => {
+          if (opt.default !== undefined) {
+            defaults[opt.name] = opt.default;
+          }
+        });
+        initializeOptions(commandId, defaults);
+        initializedRef.current[commandId] = true;
+      }
+    };
+
+    loadCommand();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [commandId, initializeOptions, callApi, clearApiError, setApiError]);
+
+  useEffect(() => {
+    runningCommandRef.current = runningCommand;
+  }, [runningCommand]);
 
   // Subscribe to command output
   useEffect(() => {
-    if (!window.electronAPI) return;
+    const api = getApi('Electron API is unavailable. Command output cannot be received.');
+    if (!api) return undefined;
 
-    const unsubOutput = window.electronAPI.onCommandOutput((data) => {
-      // Only add logs if this command is running
-      if (runningCommand) {
-        addLog(runningCommand, data);
-      }
-    });
+    try {
+      const unsubOutput = api.onCommandOutput((data) => {
+        const activeCommand = runningCommandRef.current;
 
-    const unsubComplete = window.electronAPI.onCommandComplete((data) => {
-      if (runningCommand) {
-        setResult(runningCommand, data);
-        setRunningCommand(null);
-      }
-    });
+        if (activeCommand) {
+          addLog(activeCommand, data);
+        }
+      });
 
-    return () => {
-      unsubOutput();
-      unsubComplete();
-    };
-  }, [runningCommand, addLog, setResult, setRunningCommand]);
+      const unsubComplete = api.onCommandComplete((data) => {
+        const activeCommand = runningCommandRef.current;
+
+        if (activeCommand) {
+          setResult(activeCommand, data);
+          runningCommandRef.current = null;
+          setRunningCommand(null);
+        }
+      });
+
+      return () => {
+        unsubOutput?.();
+        unsubComplete?.();
+      };
+    } catch (error) {
+      handleApiError(error, 'Failed to subscribe to command output');
+      return undefined;
+    }
+  }, [addLog, setResult, setRunningCommand, getApi, handleApiError]);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -128,165 +173,63 @@ function CommandPage() {
     }
   };
 
-  const handleSelectFolder = async (name) => {
-    const path = await window.electronAPI.selectFolder();
-    if (path) {
-      handleOptionChange(name, path);
-    }
-  };
+  const handleBrowse = async (field, browseType) => {
+    const fallback = `Failed to select ${field.label || field.name}`;
+    const path = await callApi((api) => {
+      if (browseType === 'folder') return api.selectFolder();
+      if (browseType === 'save-file') return api.selectSaveFile(field.filters);
+      return api.selectFile(field.filters);
+    }, fallback);
 
-  const handleSelectFile = async (name, filters) => {
-    const path = await window.electronAPI.selectFile(filters);
     if (path) {
-      handleOptionChange(name, path);
+      handleOptionChange(field.name, path);
     }
   };
 
   const handleRun = async () => {
+    const api = getApi();
+    if (!api) return;
+
+    clearApiError();
     clearLogs(commandId);
+    runningCommandRef.current = commandId;
     setRunningCommand(commandId);
-    
-    await window.electronAPI.runCommand(commandId, options);
+
+    try {
+      const response = await api.runCommand(commandId, options);
+      if (!response?.started) {
+        throw new Error(response?.error || 'Command did not start');
+      }
+    } catch (error) {
+      const message = handleApiError(error, 'Failed to start command');
+      setResult(commandId, { success: false, code: null, error: message });
+      runningCommandRef.current = null;
+      setRunningCommand(null);
+    }
   };
 
   const handleStop = async () => {
-    await window.electronAPI.stopCommand();
-    setRunningCommand(null);
+    const stopped = await callApi((api) => api.stopCommand(), 'Failed to stop command');
+    if (stopped !== null) {
+      runningCommandRef.current = null;
+      setRunningCommand(null);
+    }
   };
 
   const handleClear = () => {
     clearLogs(commandId);
-  };
-
-  const renderOption = (opt) => {
-    const value = options[opt.name] ?? opt.default ?? '';
-
-    switch (opt.type) {
-      case 'folder':
-        return (
-          <TextField
-            key={opt.name}
-            label={opt.label || opt.name}
-            value={value}
-            onChange={(e) => handleOptionChange(opt.name, e.target.value)}
-            fullWidth
-            required={opt.required}
-            helperText={opt.description}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton onClick={() => handleSelectFolder(opt.name)}>
-                    <FolderIcon />
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-          />
-        );
-
-      case 'file':
-        return (
-          <TextField
-            key={opt.name}
-            label={opt.label || opt.name}
-            value={value}
-            onChange={(e) => handleOptionChange(opt.name, e.target.value)}
-            fullWidth
-            required={opt.required}
-            helperText={opt.description}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton onClick={() => handleSelectFile(opt.name, opt.filters)}>
-                    <FileIcon />
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-          />
-        );
-
-      case 'boolean': {
-        const isDisabled = opt.requiresOption && !options[opt.requiresOption];
-        return (
-          <FormControlLabel
-            key={opt.name}
-            disabled={isDisabled}
-            control={
-              <Checkbox
-                checked={!isDisabled && !!value}
-                onChange={(e) => handleOptionChange(opt.name, e.target.checked)}
-              />
-            }
-            label={
-              <Box>
-                <Typography color={isDisabled ? 'text.disabled' : 'text.primary'}>{opt.label || opt.name}</Typography>
-                {opt.description && (
-                  <Typography variant="caption" color={isDisabled ? 'text.disabled' : 'text.secondary'}>
-                    {opt.description}
-                  </Typography>
-                )}
-              </Box>
-            }
-          />
-        );
-      }
-
-      case 'select':
-        return (
-          <FormControl key={opt.name} fullWidth>
-            <InputLabel>{opt.label || opt.name}</InputLabel>
-            <Select
-              value={value}
-              label={opt.label || opt.name}
-              onChange={(e) => handleOptionChange(opt.name, e.target.value)}
-            >
-              {opt.choices?.map((choice) => (
-                <MenuItem key={choice.value} value={choice.value}>
-                  {choice.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        );
-
-      case 'number':
-        return (
-          <TextField
-            key={opt.name}
-            label={opt.label || opt.name}
-            type="number"
-            value={value}
-            onChange={(e) => handleOptionChange(opt.name, parseFloat(e.target.value))}
-            fullWidth
-            helperText={opt.description}
-            inputProps={{
-              min: opt.min,
-              max: opt.max,
-              step: opt.step || 1,
-            }}
-          />
-        );
-
-      default: // text
-        return (
-          <TextField
-            key={opt.name}
-            label={opt.label || opt.name}
-            value={value}
-            onChange={(e) => handleOptionChange(opt.name, e.target.value)}
-            fullWidth
-            required={opt.required}
-            helperText={opt.description}
-          />
-        );
-    }
+    clearApiError();
   };
 
   if (!command) {
     return (
       <Box sx={{ p: 4 }}>
         <Typography>Loading...</Typography>
+        {apiError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {apiError}
+          </Alert>
+        )}
       </Box>
     );
   }
@@ -306,15 +249,21 @@ function CommandPage() {
         </Typography>
       </Box>
 
+      {showApiError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {apiError}
+        </Alert>
+      )}
+
       {/* Options */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Options
-        </Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {command.options?.map(renderOption)}
-        </Box>
-      </Paper>
+      <CommandFieldsPanel
+        title="Options"
+        fields={command.options || []}
+        values={options}
+        onChange={handleOptionChange}
+        onBrowse={handleBrowse}
+        parseNumberValue={parseCommandNumber}
+      />
 
       {/* Run Button */}
       <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
@@ -360,50 +309,12 @@ function CommandPage() {
       {/* Progress */}
       {isRunning && <LinearProgress sx={{ mb: 2 }} />}
 
-      {/* Result */}
-      {result && (
-        <Alert 
-          severity={result.success ? 'success' : 'error'} 
-          sx={{ mb: 2 }}
-        >
-          {result.success 
-            ? 'Command completed successfully!' 
-            : `Command failed with exit code ${result.code}`
-          }
-          {result.error && `: ${result.error}`}
-        </Alert>
-      )}
-
-      {/* Logs */}
-      {logs.length > 0 && (
-        <Paper
-          sx={{
-            flex: 1,
-            minHeight: 200,
-            overflow: 'auto',
-            bgcolor: '#0d0d0d',
-            p: 2,
-            fontFamily: 'monospace',
-            fontSize: '0.85rem',
-          }}
-        >
-          {logs.map((log, i) => (
-            <Box
-              key={i}
-              component="pre"
-              sx={{
-                m: 0,
-                color: log.type === 'stderr' ? '#ff6b6b' : '#e0e0e0',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-              }}
-            >
-              {log.text}
-            </Box>
-          ))}
-          <div ref={logsEndRef} />
-        </Paper>
-      )}
+      <ExecutionOutput
+        result={result}
+        logs={logs}
+        logsEndRef={logsEndRef}
+        formatResult={formatCommandResult}
+      />
     </Box>
   );
 }

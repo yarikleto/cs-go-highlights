@@ -1,21 +1,23 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+function subscribe(channel, callback) {
+  if (typeof callback !== 'function') {
+    throw new TypeError('callback must be a function');
+  }
+
+  const subscription = (event, data) => callback(data);
+  ipcRenderer.on(channel, subscription);
+  return () => ipcRenderer.removeListener(channel, subscription);
+}
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // Command execution
   runCommand: (command, options) => ipcRenderer.invoke('run-command', command, options),
   stopCommand: () => ipcRenderer.invoke('stop-command'),
-  onCommandOutput: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('command-output', subscription);
-    return () => ipcRenderer.removeListener('command-output', subscription);
-  },
-  onCommandComplete: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('command-complete', subscription);
-    return () => ipcRenderer.removeListener('command-complete', subscription);
-  },
+  onCommandOutput: (callback) => subscribe('command-output', callback),
+  onCommandComplete: (callback) => subscribe('command-complete', callback),
 
   // Dialog APIs
   selectFolder: () => ipcRenderer.invoke('select-folder'),
@@ -37,26 +39,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFlows: () => ipcRenderer.invoke('get-flows'),
   runFlow: (flowId, params) => ipcRenderer.invoke('run-flow', flowId, params),
   stopFlow: () => ipcRenderer.invoke('stop-flow'),
-  onFlowStepStart: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('flow-step-start', subscription);
-    return () => ipcRenderer.removeListener('flow-step-start', subscription);
-  },
-  onFlowOutput: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('flow-output', subscription);
-    return () => ipcRenderer.removeListener('flow-output', subscription);
-  },
-  onFlowStepComplete: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('flow-step-complete', subscription);
-    return () => ipcRenderer.removeListener('flow-step-complete', subscription);
-  },
-  onFlowComplete: (callback) => {
-    const subscription = (event, data) => callback(data);
-    ipcRenderer.on('flow-complete', subscription);
-    return () => ipcRenderer.removeListener('flow-complete', subscription);
-  },
+  onFlowStepStart: (callback) => subscribe('flow-step-start', callback),
+  onFlowOutput: (callback) => subscribe('flow-output', callback),
+  onFlowStepComplete: (callback) => subscribe('flow-step-complete', callback),
+  onFlowComplete: (callback) => subscribe('flow-complete', callback),
 
   // App info
   getAppPath: () => ipcRenderer.invoke('get-app-path'),

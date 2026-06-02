@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -22,13 +22,17 @@ import {
 } from '@mui/icons-material';
 import Timeline from '../components/Timeline';
 import PreviewPlayer from '../components/PreviewPlayer';
-
-function formatTime(seconds) {
-  if (!seconds || isNaN(seconds)) return '0:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = (seconds % 60).toFixed(1);
-  return `${mins}:${secs.padStart(4, '0')}`;
-}
+import { joinLocalPath } from '../lib/musicEditor/media';
+import {
+  appendUniqueMusicTracks,
+  createMusicTimelineData,
+  formatEditorTime,
+  getTotalClipsDuration,
+  getTotalMusicDuration,
+  hydrateTimelineClips,
+  initializeClips,
+  moveClip,
+} from '../lib/musicEditor/timeline';
 
 export default function MusicEditor() {
   // Data state (causes re-render only when data changes)
@@ -49,17 +53,15 @@ export default function MusicEditor() {
   const timelineRef = useRef(null);
   const previewRef = useRef(null);
 
-  const totalMusicDuration = music.reduce((sum, t) => sum + t.duration, 0);
-  const totalClipsDuration = clips.length > 0
-    ? Math.max(...clips.map(c => c.position + c.duration))
-    : 0;
+  const totalMusicDuration = useMemo(() => getTotalMusicDuration(music), [music]);
+  const totalClipsDuration = useMemo(() => getTotalClipsDuration(clips), [clips]);
 
   // Imperatively update all time-dependent UI
   const syncUI = useCallback(() => {
     const t = timeRef.current;
     // Update time display
     if (timeDisplayRef.current) {
-      timeDisplayRef.current.textContent = formatTime(t);
+      timeDisplayRef.current.textContent = formatEditorTime(t);
     }
     // Update timeline playhead
     if (timelineRef.current) {
@@ -73,10 +75,9 @@ export default function MusicEditor() {
 
   // Seek to a specific time (called by timeline click, clip select, etc.)
   const seekTo = useCallback((t) => {
-    console.log('[MusicEditor] SEEK to', t.toFixed(2), 'isPlaying=', isPlaying);
     timeRef.current = Math.max(0, t);
     syncUI();
-  }, [syncUI, isPlaying]);
+  }, [syncUI]);
 
   // Playback animation loop
   useEffect(() => {
@@ -131,13 +132,7 @@ export default function MusicEditor() {
         setClips([]);
         return;
       }
-      let position = 0;
-      const initializedClips = scannedClips.map((clip, index) => {
-        const c = { ...clip, index, position, musicStart: position, musicEnd: position + clip.duration };
-        position += clip.duration;
-        return c;
-      });
-      setClips(initializedClips);
+      setClips(initializeClips(scannedClips));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -149,68 +144,28 @@ export default function MusicEditor() {
     try {
       const audioFiles = await window.electronAPI.selectAudioFiles();
       if (!audioFiles || audioFiles.length === 0) return;
-      setMusic(prev => {
-        const newMusic = [...prev];
-        let order = prev.length;
-        for (const file of audioFiles) {
-          if (!newMusic.some(m => m.path === file.path)) {
-            newMusic.push({ ...file, order: order++ });
-          }
-        }
-        return newMusic;
-      });
+      setMusic(prev => appendUniqueMusicTracks(prev, audioFiles));
     } catch (e) {
       setError(e.message);
     }
   };
 
   const handleClipMove = useCallback((clipIndex, newPosition, shiftKey = false) => {
-    setClips(prev => {
-      const newClips = [...prev];
-      const clip = newClips[clipIndex];
-      const delta = newPosition - clip.position;
-      if (newPosition < 0) newPosition = 0;
-
-      if (shiftKey) {
-        // Shift+drag: move this clip and ALL clips after it by the same delta
-        const clampedDelta = newPosition - clip.position;
-        for (let i = clipIndex; i < newClips.length; i++) {
-          const c = newClips[i];
-          const newPos = Math.max(0, c.position + clampedDelta);
-          newClips[i] = { ...c, position: newPos, musicStart: newPos, musicEnd: newPos + c.duration };
-        }
-      } else {
-        // Normal drag: move single clip, push subsequent clips if overlapping
-        newClips[clipIndex] = { ...clip, position: newPosition, musicStart: newPosition, musicEnd: newPosition + clip.duration };
-        if (delta > 0) {
-          for (let i = clipIndex + 1; i < newClips.length; i++) {
-            const other = newClips[i];
-            const movedEnd = newClips[clipIndex].position + newClips[clipIndex].duration;
-            if (other.position < movedEnd) {
-              newClips[i] = { ...other, position: movedEnd, musicStart: movedEnd, musicEnd: movedEnd + other.duration };
-            }
-          }
-        }
-      }
-
-      newClips.sort((a, b) => a.position - b.position);
-      return newClips;
-    });
+    setClips(prev => moveClip(prev, clipIndex, newPosition, shiftKey));
   }, []);
 
   const handleSave = async () => {
     try {
       const result = await window.electronAPI.selectFolder();
       if (!result) return;
-      const outputPath = `${result}/music-timeline.json`;
-      const data = {
-        version: 1,
-        createdAt: new Date().toISOString(),
+      const outputPath = joinLocalPath(result, 'music-timeline.json');
+      const data = createMusicTimelineData({
         clipsFolder,
-        clips: clips.map(c => ({ filename: c.filename, duration: c.duration, position: c.position, musicStart: c.musicStart, musicEnd: c.musicEnd })),
-        music: music.map(m => ({ filename: m.filename, path: m.path, duration: m.duration, order: m.order })),
+        clips,
+        music,
         totalMusicDuration,
-      };
+        createdAt: new Date().toISOString(),
+      });
       await window.electronAPI.saveMusicTimeline(outputPath, data);
       alert(`Saved to: ${outputPath}`);
     } catch (e) {
@@ -227,7 +182,7 @@ export default function MusicEditor() {
       if (data.version !== 1) throw new Error('Unsupported timeline version');
       if (data.clipsFolder) {
         setClipsFolder(data.clipsFolder);
-        setClips(data.clips.map((c, i) => ({ ...c, index: i, path: `${data.clipsFolder}/${c.filename}` })));
+        setClips(hydrateTimelineClips(data.clips, data.clipsFolder));
       }
       if (data.music) setMusic(data.music);
     } catch (e) {
@@ -299,7 +254,7 @@ export default function MusicEditor() {
                   {isPlaying ? <PauseIcon /> : <PlayIcon />}
                 </IconButton>
                 <Typography ref={timeDisplayRef} variant="h5" sx={{ fontFamily: 'monospace' }}>
-                  {formatTime(timeRef.current)}
+                  {formatEditorTime(timeRef.current)}
                 </Typography>
               </Stack>
               <Stack direction="row" spacing={3} flexWrap="wrap" sx={{ mb: 1.5 }}>
@@ -309,7 +264,7 @@ export default function MusicEditor() {
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary">Clips Duration</Typography>
-                  <Typography variant="body1"><strong>{formatTime(totalClipsDuration)}</strong></Typography>
+                  <Typography variant="body1"><strong>{formatEditorTime(totalClipsDuration)}</strong></Typography>
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary">Music Tracks</Typography>
@@ -317,7 +272,7 @@ export default function MusicEditor() {
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary">Music Duration</Typography>
-                  <Typography variant="body1"><strong>{formatTime(totalMusicDuration)}</strong></Typography>
+                  <Typography variant="body1"><strong>{formatEditorTime(totalMusicDuration)}</strong></Typography>
                 </Box>
               </Stack>
               {music.length > 0 && (
@@ -325,7 +280,7 @@ export default function MusicEditor() {
                   <Typography variant="caption" color="text.secondary">Music Tracks:</Typography>
                   {music.map((track, i) => (
                     <Typography key={i} variant="body2" color="text.secondary" noWrap>
-                      {i + 1}. {track.filename} ({formatTime(track.duration)})
+                      {i + 1}. {track.filename} ({formatEditorTime(track.duration)})
                     </Typography>
                   ))}
                 </Box>

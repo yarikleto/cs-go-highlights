@@ -1,62 +1,80 @@
 import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Box, Typography, Slider, IconButton, Stack, LinearProgress } from '@mui/material';
+import { Box, Typography, Slider, IconButton, Stack } from '@mui/material';
 import {
   VolumeUp as VolumeIcon,
   VolumeOff as MuteIcon,
 } from '@mui/icons-material';
+import {
+  findClipAtTime,
+  findMusicAtTime,
+  formatPreviewTime,
+} from '../lib/musicEditor/timeline';
+import { pathToMediaUrl } from '../lib/musicEditor/media';
 
-function formatTime(seconds) {
-  if (!seconds || isNaN(seconds)) return '0:00.0';
-  const mins = Math.floor(seconds / 60);
-  const secs = (seconds % 60).toFixed(1);
-  return `${mins}:${secs.padStart(4, '0')}`;
+const VIDEO_STYLE = 'width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;display:none;';
+
+function createVideoElement(clip, index, muted) {
+  const src = pathToMediaUrl(clip?.path);
+  if (!src) return null;
+
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  video.playsInline = true;
+  video.muted = muted;
+  video.style.cssText = VIDEO_STYLE;
+  video.src = src;
+  video.addEventListener('error', () => {
+    const message = video.error?.message || video.error?.code || 'unknown error';
+    console.error(`[Preview] Failed to stream clip ${index}:`, clip.filename, message);
+  });
+
+  return video;
 }
 
-function pathToMediaUrl(filePath) {
-  if (!filePath) return '';
-  return `local-media://play/${filePath.replace(/\\/g, '/')}`;
+function disposeVideoElement(video) {
+  if (!video) return;
+
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  if (video.parentNode) video.parentNode.removeChild(video);
 }
 
-const MIME_BY_EXT = {
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
-  '.avi': 'video/x-msvideo', '.mov': 'video/quicktime',
-  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
-  '.flac': 'audio/flac', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
-};
+function hideVideo(video) {
+  if (!video) return;
 
-function getMime(filename) {
-  const ext = (filename || '').match(/\.[^.]+$/)?.[0]?.toLowerCase() || '';
-  return MIME_BY_EXT[ext] || 'video/mp4';
+  video.pause();
+  video.style.display = 'none';
 }
 
-function findClipAtTime(clips, time) {
-  if (time < 0) time = 0;
-  for (let i = 0; i < clips.length; i++) {
-    const clip = clips[i];
-    if (time >= clip.position && time < clip.position + clip.duration) {
-      return { index: i, localTime: Math.max(0, time - clip.position) };
-    }
+function playMedia(media) {
+  if (!media) return;
+  media.play().catch(() => {});
+}
+
+function setMediaCurrentTime(media, time) {
+  if (!media) return;
+
+  const nextTime = Math.max(0, time);
+  try {
+    media.currentTime = nextTime;
+  } catch (e) {
+    media.addEventListener('loadedmetadata', () => {
+      media.currentTime = nextTime;
+    }, { once: true });
   }
-  return null;
 }
 
-function findMusicAtTime(music, time) {
-  if (time < 0) time = 0;
-  let offset = 0;
-  for (let i = 0; i < music.length; i++) {
-    const track = music[i];
-    if (time >= offset && time < offset + track.duration) {
-      return { index: i, localTime: Math.max(0, time - offset) };
-    }
-    offset += track.duration;
+function syncMediaCurrentTime(media, time, threshold = 0.3) {
+  if (!media) return;
+  if (Number.isNaN(media.currentTime) || Math.abs(media.currentTime - time) > threshold) {
+    setMediaCurrentTime(media, time);
   }
-  return null;
 }
 
 /**
- * PreviewPlayer — loads ALL clip videos into memory as Blob URLs.
- * No custom protocol needed. Each clip = one <video> with a blob: src.
- * Switching clips = show/hide + seek. Instant, no loading.
+ * PreviewPlayer keeps one <video> element per clip, but sources each element
+ * through local-media:// so the renderer does not read full clips into Blob URLs.
  */
 const PreviewPlayer = forwardRef(function PreviewPlayer({
   clips,
@@ -66,7 +84,6 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
 }, ref) {
   const containerRef = useRef(null);
   const videoElementsRef = useRef([]); // <video> DOM elements
-  const blobUrlsRef = useRef([]);      // blob: URLs to revoke on cleanup
   const audioRef = useRef(null);
   const timeDisplayRef = useRef(null);
   const clipInfoRef = useRef(null);
@@ -76,7 +93,6 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
   const [videoMuted, setVideoMuted] = useState(false);
   const [musicMuted, setMusicMuted] = useState(false);
   const [musicVolume, setMusicVolume] = useState(0.7);
-  const [loadingProgress, setLoadingProgress] = useState(null); // null = not loading, 0-100
 
   const timeRef = useRef(initialTime);
   const activeClipIndexRef = useRef(-1);
@@ -91,88 +107,6 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { videoMutedRef.current = videoMuted; }, [videoMuted]);
 
-  // --- Load all clips into memory as Blob URLs, create <video> elements ---
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || clips.length === 0) return;
-
-    let cancelled = false;
-
-    // Cleanup previous
-    videoElementsRef.current.forEach(v => {
-      v.pause();
-      v.removeAttribute('src');
-      v.load();
-      if (v.parentNode) v.parentNode.removeChild(v);
-    });
-    blobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
-    videoElementsRef.current = [];
-    blobUrlsRef.current = [];
-    activeClipIndexRef.current = -1;
-
-    const loadAll = async () => {
-      setLoadingProgress(0);
-      const videos = [];
-      const urls = [];
-
-      for (let i = 0; i < clips.length; i++) {
-        if (cancelled) return;
-
-        const clip = clips[i];
-        try {
-          // Read file via IPC → Buffer → Blob → ObjectURL
-          const buffer = await window.electronAPI.readFileBuffer(clip.path);
-          const blob = new Blob([buffer], { type: getMime(clip.filename) });
-          const blobUrl = URL.createObjectURL(blob);
-          urls.push(blobUrl);
-
-          // Create <video> element
-          const video = document.createElement('video');
-          video.preload = 'auto';
-          video.playsInline = true;
-          video.muted = videoMutedRef.current;
-          video.style.cssText = 'width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;display:none;';
-          video.src = blobUrl;
-          container.appendChild(video);
-          videos.push(video);
-        } catch (err) {
-          console.error(`[Preview] Failed to load clip ${i}:`, clip.filename, err.message);
-          // Push null placeholder to keep indices aligned
-          urls.push(null);
-          videos.push(null);
-        }
-
-        setLoadingProgress(Math.round(((i + 1) / clips.length) * 100));
-      }
-
-      if (cancelled) {
-        // Cleanup if unmounted during loading
-        videos.forEach(v => { if (v?.parentNode) v.parentNode.removeChild(v); });
-        urls.forEach(u => { if (u) URL.revokeObjectURL(u); });
-        return;
-      }
-
-      videoElementsRef.current = videos;
-      blobUrlsRef.current = urls;
-      setLoadingProgress(null);
-
-      // Initial sync
-      syncToTime(timeRef.current);
-    };
-
-    loadAll();
-
-    return () => {
-      cancelled = true;
-      videoElementsRef.current.forEach(v => {
-        if (v) { v.pause(); v.removeAttribute('src'); v.load(); if (v.parentNode) v.parentNode.removeChild(v); }
-      });
-      blobUrlsRef.current.forEach(u => { if (u) URL.revokeObjectURL(u); });
-      videoElementsRef.current = [];
-      blobUrlsRef.current = [];
-    };
-  }, [clips]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // --- Core sync ---
   const syncToTime = useCallback((t) => {
     if (t < 0) t = 0;
@@ -186,10 +120,7 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
     const prevIndex = activeClipIndexRef.current;
 
     if (!clipInfo) {
-      if (prevIndex >= 0 && prevIndex < videos.length && videos[prevIndex]) {
-        videos[prevIndex].pause();
-        videos[prevIndex].style.display = 'none';
-      }
+      hideVideo(videos[prevIndex]);
       activeClipIndexRef.current = -1;
       if (noClipRef.current) noClipRef.current.style.display = 'flex';
       if (clipInfoRef.current) clipInfoRef.current.style.display = 'none';
@@ -202,23 +133,22 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
       if (video) {
         if (index !== prevIndex) {
           // Switch clip
-          if (prevIndex >= 0 && prevIndex < videos.length && videos[prevIndex]) {
-            videos[prevIndex].pause();
-            videos[prevIndex].style.display = 'none';
-          }
+          hideVideo(videos[prevIndex]);
           video.style.display = 'block';
-          video.currentTime = localTime;
-          if (isPlayingRef.current) video.play().catch(() => {});
+          setMediaCurrentTime(video, localTime);
+          if (isPlayingRef.current) playMedia(video);
           activeClipIndexRef.current = index;
         } else {
           // Same clip — nudge if drifted
-          if (Math.abs(video.currentTime - localTime) > 0.3) {
-            video.currentTime = localTime;
-          }
+          video.style.display = 'block';
+          syncMediaCurrentTime(video, localTime);
           if (isPlayingRef.current && video.paused) {
-            video.play().catch(() => {});
+            playMedia(video);
           }
         }
+      } else {
+        hideVideo(videos[prevIndex]);
+        activeClipIndexRef.current = -1;
       }
 
       if (clipInfoRef.current) {
@@ -245,14 +175,14 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
 
       if (currentAudioSrc.current !== newSrc) {
         currentAudioSrc.current = newSrc;
-        audio.src = newSrc;
-        audio.load();
-        audio.currentTime = Math.max(0, localTime);
-        if (isPlayingRef.current) audio.play().catch(() => {});
-      } else {
-        if (Math.abs(audio.currentTime - localTime) > 0.3) {
-          audio.currentTime = Math.max(0, localTime);
+        if (audio) {
+          audio.src = newSrc;
+          audio.load();
+          setMediaCurrentTime(audio, localTime);
+          if (isPlayingRef.current) playMedia(audio);
         }
+      } else if (audio) {
+        syncMediaCurrentTime(audio, localTime);
       }
 
       if (musicInfoRef.current) {
@@ -262,9 +192,32 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
     }
 
     if (timeDisplayRef.current) {
-      timeDisplayRef.current.textContent = formatTime(t);
+      timeDisplayRef.current.textContent = formatPreviewTime(t);
     }
   }, []);
+
+  // --- Create streamed video elements ---
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || clips.length === 0) return;
+
+    const videos = clips.map((clip, index) => createVideoElement(clip, index, videoMutedRef.current));
+    videos.forEach(video => {
+      if (video) container.appendChild(video);
+    });
+
+    videoElementsRef.current = videos;
+    activeClipIndexRef.current = -1;
+    syncToTime(timeRef.current);
+
+    return () => {
+      videos.forEach(disposeVideoElement);
+      if (videoElementsRef.current === videos) {
+        videoElementsRef.current = [];
+      }
+      activeClipIndexRef.current = -1;
+    };
+  }, [clips, syncToTime]);
 
   useImperativeHandle(ref, () => ({
     setTime(t) { syncToTime(t); },
@@ -276,8 +229,8 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
     const audio = audioRef.current;
     const idx = activeClipIndexRef.current;
     if (isPlaying) {
-      if (idx >= 0 && idx < videos.length && videos[idx]) videos[idx].play().catch(() => {});
-      if (audio && currentAudioSrc.current) audio.play().catch(() => {});
+      if (idx >= 0 && idx < videos.length && videos[idx]) playMedia(videos[idx]);
+      if (audio && currentAudioSrc.current) playMedia(audio);
     } else {
       videos.forEach(v => { if (v) v.pause(); });
       audio?.pause();
@@ -299,16 +252,6 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
         ref={containerRef}
         sx={{ position: 'relative', flex: 1, bgcolor: '#000', borderRadius: 1, overflow: 'hidden', minHeight: 0 }}
       >
-        {/* Loading progress */}
-        {loadingProgress !== null && (
-          <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 5, textAlign: 'center', width: '60%' }}>
-            <Typography color="text.secondary" sx={{ mb: 1 }}>
-              Loading clips... {loadingProgress}%
-            </Typography>
-            <LinearProgress variant="determinate" value={loadingProgress} />
-          </Box>
-        )}
-
         <Box
           ref={noClipRef}
           sx={{
@@ -335,7 +278,7 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
 
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 1, flexShrink: 0 }}>
         <Typography ref={timeDisplayRef} variant="body2" sx={{ minWidth: 80 }}>
-          {formatTime(initialTime)}
+          {formatPreviewTime(initialTime)}
         </Typography>
 
         <IconButton size="small" onClick={() => setVideoMuted(!videoMuted)} title="Toggle video sound">

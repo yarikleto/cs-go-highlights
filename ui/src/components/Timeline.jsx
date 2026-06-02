@@ -1,5 +1,13 @@
 import { useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Box, Typography, Tooltip } from '@mui/material';
+import {
+  formatTimelineTime,
+  getDraggedClipPosition,
+  getMusicSegments,
+  getTimeMarkers,
+  getTimelineClickTime,
+  getTimelineDuration,
+} from '../lib/musicEditor/timeline';
 
 const CLIP_COLORS = [
   '#2196F3', '#4CAF50', '#FF9800', '#E91E63', '#9C27B0',
@@ -9,13 +17,6 @@ const CLIP_COLORS = [
 const MUSIC_COLORS = [
   '#7C4DFF', '#651FFF', '#536DFE', '#448AFF', '#40C4FF',
 ];
-
-function formatTime(seconds) {
-  if (!seconds || isNaN(seconds)) return '0:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
 const Timeline = forwardRef(function Timeline({
   clips,
@@ -51,24 +52,10 @@ const Timeline = forwardRef(function Timeline({
     }
   }, [zoom]); // re-apply when zoom changes
 
-  const totalMusicDuration = music.reduce((sum, m) => sum + m.duration, 0);
-  const maxClipEnd = clips.length > 0
-    ? Math.max(...clips.map(c => c.position + c.duration))
-    : 0;
-  const totalDuration = Math.max(totalMusicDuration, maxClipEnd, 60);
+  const totalDuration = getTimelineDuration(clips, music);
   const timelineWidth = totalDuration * zoom;
-
-  const getTimeMarkers = () => {
-    const markers = [];
-    let step = 60;
-    if (zoom > 30) step = 30;
-    if (zoom > 50) step = 15;
-    if (zoom > 100) step = 5;
-    for (let t = 0; t <= totalDuration; t += step) {
-      markers.push(t);
-    }
-    return markers;
-  };
+  const timeMarkers = getTimeMarkers(totalDuration, zoom);
+  const musicSegments = getMusicSegments(music);
 
   const handleClipMouseDown = (e, clipIndex) => {
     e.preventDefault();
@@ -83,10 +70,12 @@ const Timeline = forwardRef(function Timeline({
 
   const handleMouseMove = useCallback((e) => {
     if (draggingClip === null) return;
-    const deltaX = e.clientX - dragStartX;
-    const deltaTime = deltaX / zoom;
-    let newPosition = dragStartPos + deltaTime;
-    if (newPosition < 0) newPosition = 0;
+    const newPosition = getDraggedClipPosition({
+      currentX: e.clientX,
+      startX: dragStartX,
+      startPosition: dragStartPos,
+      zoom,
+    });
     onClipMove?.(draggingClip, newPosition, shiftDragRef.current);
   }, [draggingClip, dragStartX, dragStartPos, zoom, onClipMove]);
 
@@ -109,9 +98,13 @@ const Timeline = forwardRef(function Timeline({
     if (draggingClip !== null) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const x = e.clientX - rect.left + (containerRef.current?.scrollLeft || 0);
-    const time = x / zoom;
-    onSeek?.(Math.max(0, time));
+    const time = getTimelineClickTime({
+      clientX: e.clientX,
+      rectLeft: rect.left,
+      scrollLeft: containerRef.current?.scrollLeft || 0,
+      zoom,
+    });
+    onSeek?.(time);
   };
 
   // Ctrl + mouse wheel = zoom
@@ -151,9 +144,9 @@ const Timeline = forwardRef(function Timeline({
       >
         {/* Time markers */}
         <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24, borderBottom: '1px solid #333', display: 'flex' }}>
-          {getTimeMarkers().map((time) => (
+          {timeMarkers.map((time) => (
             <Box key={time} sx={{ position: 'absolute', left: time * zoom, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: '#888', fontSize: 10 }}>{formatTime(time)}</Typography>
+              <Typography variant="caption" sx={{ color: '#888', fontSize: 10 }}>{formatTimelineTime(time)}</Typography>
               <Box sx={{ width: 1, height: 8, bgcolor: '#444' }} />
             </Box>
           ))}
@@ -169,7 +162,7 @@ const Timeline = forwardRef(function Timeline({
             const isDragging = draggingClip === index;
             const clipColor = CLIP_COLORS[index % CLIP_COLORS.length];
             return (
-              <Tooltip key={clip.filename} title={`${clip.filename} (${formatTime(clip.duration)})`} placement="top">
+              <Tooltip key={clip.filename} title={`${clip.filename} (${formatTimelineTime(clip.duration)})`} placement="top">
                 <Box
                   onMouseDown={(e) => handleClipMouseDown(e, index)}
                   sx={{
@@ -206,37 +199,30 @@ const Timeline = forwardRef(function Timeline({
           <Typography variant="caption" sx={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%) rotate(-90deg)', color: '#666', whiteSpace: 'nowrap' }}>
             Music
           </Typography>
-          {(() => {
-            let offset = 0;
-            return music.map((track, index) => {
-              const el = (
-                <Tooltip key={track.filename} title={`${track.filename} (${formatTime(track.duration)})`} placement="bottom">
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      left: offset * zoom,
-                      width: Math.max(track.duration * zoom, 2),
-                      height: 50,
-                      top: 5,
-                      bgcolor: MUSIC_COLORS[index % MUSIC_COLORS.length],
-                      borderRadius: 1,
-                      border: '1px solid rgba(255,255,255,0.3)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ color: '#fff', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', px: 1, textShadow: '0 0 3px rgba(0,0,0,0.8)' }}>
-                      {track.filename}
-                    </Typography>
-                  </Box>
-                </Tooltip>
-              );
-              offset += track.duration;
-              return el;
-            });
-          })()}
+          {musicSegments.map(({ track, index, start, duration }) => (
+            <Tooltip key={track.filename} title={`${track.filename} (${formatTimelineTime(duration)})`} placement="bottom">
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: start * zoom,
+                  width: Math.max(duration * zoom, 2),
+                  height: 50,
+                  top: 5,
+                  bgcolor: MUSIC_COLORS[index % MUSIC_COLORS.length],
+                  borderRadius: 1,
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                }}
+              >
+                <Typography variant="caption" sx={{ color: '#fff', fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', px: 1, textShadow: '0 0 3px rgba(0,0,0,0.8)' }}>
+                  {track.filename}
+                </Typography>
+              </Box>
+            </Tooltip>
+          ))}
         </Box>
 
         {/* Playhead — updated via ref, no re-renders */}
