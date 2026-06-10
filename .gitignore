@@ -11,3 +11,13 @@ unused_demos/
 PRIVATE_README.md
 /music
 docs/superpowers/
+
+# AI coding assistants (Claude Code, Codex, etc.)
+.claude/
+CLAUDE.md
+AGENTS.md
+.codex/
+.gemini/
+GEMINI.md
+.github/copilot-instructions.md
+.cursorrules
