@@ -38,5 +38,8 @@
     "demofile": "^2.10.0",
     "node-unrar-js": "^2.0.2",
     "yauzl": "^3.3.0"
+  },
+  "overrides": {
+    "protobufjs": "^7.6.3"
   }
 }
