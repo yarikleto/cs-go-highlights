@@ -12,6 +12,7 @@ import {
 } from '@mui/icons-material';
 import ConfigSection from '../components/config/ConfigSection';
 import { CONFIG_SECTIONS } from '../components/config/configSections';
+import PageHeader from '../components/shell/PageHeader';
 
 function GlobalConfig() {
   const [config, setConfig] = useState(null);
@@ -108,7 +109,7 @@ function GlobalConfig() {
   if (loading) {
     return (
       <Box sx={{ p: 4 }}>
-        <Typography>Loading config...</Typography>
+        <Typography color="text.secondary">Loading config…</Typography>
       </Box>
     );
   }
@@ -135,49 +136,54 @@ function GlobalConfig() {
   }
 
   return (
-    <Box sx={{ p: 4 }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h4" fontWeight="bold">
-            Global Configuration
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Default values for all commands. These can be overridden per-command.
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={loadConfig}
-            disabled={loading || saving}
-          >
-            Reset
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            onClick={saveConfig}
-            disabled={saving || loading}
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Header stays put while the sections scroll underneath. */}
+      <Box sx={{ flexShrink: 0, px: 4, pt: 4, pb: 2.5 }}>
+        <Box sx={{ maxWidth: 1400 }}>
+          <PageHeader
+            sx={{ mb: 0, alignItems: 'center' }}
+            title="Global Configuration"
+            subtitle="Default values for all commands. These can be overridden per-command."
+            actions={
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<RefreshIcon />}
+                  onClick={loadConfig}
+                  disabled={loading || saving}
+                >
+                  Reset
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={saveConfig}
+                  disabled={saving || loading}
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </Button>
+              </>
+            }
+          />
         </Box>
       </Box>
 
-      {CONFIG_SECTIONS.map((section) => (
-        <ConfigSection
-          key={section.id}
-          section={section}
-          config={config}
-          expanded={expanded.includes(section.id)}
-          onAccordionChange={handleAccordion}
-          onFieldChange={handleChange}
-          onSelectFolder={handleSelectFolder}
-          onSelectFile={handleSelectFile}
-        />
-      ))}
+      <Box sx={{ flex: 1, overflowY: 'auto', px: 4, pb: 4 }}>
+        <Box sx={{ maxWidth: 1400 }}>
+          {CONFIG_SECTIONS.map((section) => (
+            <ConfigSection
+              key={section.id}
+              section={section}
+              config={config}
+              expanded={expanded.includes(section.id)}
+              onAccordionChange={handleAccordion}
+              onFieldChange={handleChange}
+              onSelectFolder={handleSelectFolder}
+              onSelectFile={handleSelectFile}
+            />
+          ))}
+        </Box>
+      </Box>
 
       {/* Snackbar */}
       <Snackbar

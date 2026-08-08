@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material';
 import CommandFieldsPanel from '../components/commands/CommandFieldsPanel';
 import ExecutionOutput from '../components/commands/ExecutionOutput';
+import PageHeader from '../components/shell/PageHeader';
 import { useElectronApi } from '../hooks/commands/useElectronApi';
 
 function formatFlowResult(result) {
@@ -198,7 +199,7 @@ function FlowPage() {
   if (!flow) {
     return (
       <Box sx={{ p: 4 }}>
-        <Typography>Loading...</Typography>
+        <Typography color="text.secondary">Loading…</Typography>
         {apiError && (
           <Alert severity="error" sx={{ mt: 2 }}>
             {apiError}
@@ -212,19 +213,12 @@ function FlowPage() {
   const progress = flow.steps.length > 0 ? (completedSteps / flow.steps.length) * 100 : 0;
 
   return (
-    <Box sx={{ p: 4, minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" fontWeight="bold">
-            {flow.name}
-          </Typography>
-          <Chip label="Flow" size="small" color="secondary" variant="outlined" />
-        </Box>
-        <Typography variant="body1" color="text.secondary" sx={{ mt: 1 }}>
-          {flow.description}
-        </Typography>
-      </Box>
+    <Box sx={{ p: 4, minHeight: '100%', display: 'flex', flexDirection: 'column', maxWidth: 1200 }}>
+      <PageHeader
+        title={flow.name}
+        subtitle={flow.description}
+        chip={<Chip label="Flow" size="small" color="primary" variant="outlined" />}
+      />
 
       {showApiError && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -269,7 +263,9 @@ function FlowPage() {
                 icon={getStepIcon(stepStatuses[i])}
                 sx={{
                   '& .MuiStepLabel-label': {
-                    fontWeight: stepStatuses[i] === 'running' ? 'bold' : 'normal',
+                    fontSize: '0.875rem',
+                    fontWeight: stepStatuses[i] === 'running' ? 600 : 450,
+                    ...(stepStatuses[i] === 'running' && { color: 'primary.main' }),
                   },
                 }}
               >

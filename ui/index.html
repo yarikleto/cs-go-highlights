@@ -4,9 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- CSP disabled — local desktop app, no security restrictions needed -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <title>CS:GO Highlights</title>
     <style>
       * {
@@ -14,8 +11,11 @@
         padding: 0;
         box-sizing: border-box;
       }
+      /* System stack — no webfont request, so the app renders identically offline. */
       body {
-        font-family: 'Roboto', sans-serif;
+        font-family: -apple-system, 'Segoe UI Variable Text', 'Segoe UI', system-ui,
+          'Helvetica Neue', Arial, sans-serif;
+        background-color: #14171a;
         overflow: hidden;
       }
       #root {

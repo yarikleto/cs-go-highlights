@@ -8,15 +8,21 @@ import {
   getTimelineClickTime,
   getTimelineDuration,
 } from '../lib/musicEditor/timeline';
+import { tokens } from '../theme/tokens';
+import { sunkenSurface } from '../theme/glass';
 
+// Clips stay in a cool, muted family so a long timeline reads as one surface;
+// music takes the amber accent so the two tracks are told apart by hue.
 const CLIP_COLORS = [
-  '#2196F3', '#4CAF50', '#FF9800', '#E91E63', '#9C27B0',
-  '#00BCD4', '#FFEB3B', '#795548', '#607D8B', '#F44336',
+  '#5E98D9', '#4E8F86', '#7A8C99', '#6B7FA8', '#8C9B5E',
+  '#5D7EA0', '#9A8B6E', '#6E8C7A', '#84909B', '#5F8AA0',
 ];
 
 const MUSIC_COLORS = [
-  '#7C4DFF', '#651FFF', '#536DFE', '#448AFF', '#40C4FF',
+  '#DE9B35', '#C4832B', '#B96F2C', '#D0A73F', '#A9702A',
 ];
+
+const CLIP_RADIUS = 6;
 
 const Timeline = forwardRef(function Timeline({
   clips,
@@ -126,11 +132,10 @@ const Timeline = forwardRef(function Timeline({
     <Box
       ref={containerRef}
       sx={{
+        ...sunkenSurface({ radius: tokens.radius.md }),
         flex: 1,
         overflow: 'auto',
         position: 'relative',
-        bgcolor: '#1a1a2e',
-        borderRadius: 1,
         cursor: draggingClip !== null ? 'grabbing' : 'default',
       }}
     >
@@ -143,18 +148,18 @@ const Timeline = forwardRef(function Timeline({
         onClick={handleTimelineClick}
       >
         {/* Time markers */}
-        <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24, borderBottom: '1px solid #333', display: 'flex' }}>
+        <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24, borderBottom: `1px solid ${tokens.hairline}`, display: 'flex' }}>
           {timeMarkers.map((time) => (
             <Box key={time} sx={{ position: 'absolute', left: time * zoom, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: '#888', fontSize: 10 }}>{formatTimelineTime(time)}</Typography>
-              <Box sx={{ width: 1, height: 8, bgcolor: '#444' }} />
+              <Typography variant="caption" sx={{ color: tokens.text.secondary, fontSize: 10 }}>{formatTimelineTime(time)}</Typography>
+              <Box sx={{ width: 1, height: 8, bgcolor: tokens.hairlineStrong }} />
             </Box>
           ))}
         </Box>
 
         {/* Clips track */}
-        <Box sx={{ position: 'absolute', top: 30, left: 0, right: 0, height: 60, borderBottom: '1px solid #333' }}>
-          <Typography variant="caption" sx={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%) rotate(-90deg)', color: '#666', whiteSpace: 'nowrap' }}>
+        <Box sx={{ position: 'absolute', top: 30, left: 0, right: 0, height: 60, borderBottom: `1px solid ${tokens.hairline}` }}>
+          <Typography variant="caption" sx={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%) rotate(-90deg)', color: tokens.text.disabled, whiteSpace: 'nowrap' }}>
             Clips
           </Typography>
           {clips.map((clip, index) => {
@@ -172,10 +177,14 @@ const Timeline = forwardRef(function Timeline({
                     height: 50,
                     top: 5,
                     bgcolor: clipColor,
-                    borderRadius: 1,
+                    borderRadius: `${CLIP_RADIUS}px`,
                     cursor: isDragging ? 'grabbing' : 'grab',
-                    border: isSelected ? '2px solid #fff' : '1px solid rgba(255,255,255,0.3)',
-                    boxShadow: isSelected ? '0 0 10px rgba(255,255,255,0.5)' : 'none',
+                    border: isSelected
+                      ? `1px solid ${tokens.text.primary}`
+                      : `1px solid ${tokens.hairlineStrong}`,
+                    boxShadow: isSelected
+                      ? `0 0 0 2px ${tokens.accentSoft}, 0 4px 14px rgba(0,0,0,0.4)`
+                      : 'inset 0 1px 0 rgba(255,255,255,0.14)',
                     opacity: isDragging ? 0.8 : 1,
                     transition: isDragging ? 'none' : 'box-shadow 0.2s',
                     display: 'flex',
@@ -195,8 +204,8 @@ const Timeline = forwardRef(function Timeline({
         </Box>
 
         {/* Music track */}
-        <Box sx={{ position: 'absolute', top: 100, left: 0, right: 0, height: 60, borderBottom: '1px solid #333' }}>
-          <Typography variant="caption" sx={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%) rotate(-90deg)', color: '#666', whiteSpace: 'nowrap' }}>
+        <Box sx={{ position: 'absolute', top: 100, left: 0, right: 0, height: 60, borderBottom: `1px solid ${tokens.hairline}` }}>
+          <Typography variant="caption" sx={{ position: 'absolute', left: -60, top: '50%', transform: 'translateY(-50%) rotate(-90deg)', color: tokens.text.disabled, whiteSpace: 'nowrap' }}>
             Music
           </Typography>
           {musicSegments.map(({ track, index, start, duration }) => (
@@ -209,8 +218,9 @@ const Timeline = forwardRef(function Timeline({
                   height: 50,
                   top: 5,
                   bgcolor: MUSIC_COLORS[index % MUSIC_COLORS.length],
-                  borderRadius: 1,
-                  border: '1px solid rgba(255,255,255,0.3)',
+                  borderRadius: `${CLIP_RADIUS}px`,
+                  border: `1px solid ${tokens.hairlineStrong}`,
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -233,7 +243,7 @@ const Timeline = forwardRef(function Timeline({
             top: 0,
             bottom: 0,
             width: 2,
-            bgcolor: '#ff4444',
+            bgcolor: tokens.status.error,
             pointerEvents: 'none',
             zIndex: 10,
             '&::before': {
@@ -245,7 +255,7 @@ const Timeline = forwardRef(function Timeline({
               height: 0,
               borderLeft: '7px solid transparent',
               borderRight: '7px solid transparent',
-              borderTop: '10px solid #ff4444',
+              borderTop: `10px solid ${tokens.status.error}`,
             },
           }}
         />

@@ -9,6 +9,7 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
+  Snackbar,
 } from '@mui/material';
 import {
   FolderOpen as FolderIcon,
@@ -33,6 +34,7 @@ import {
   initializeClips,
   moveClip,
 } from '../lib/musicEditor/timeline';
+import { MONO_STACK } from '../theme';
 
 export default function MusicEditor() {
   // Data state (causes re-render only when data changes)
@@ -45,6 +47,7 @@ export default function MusicEditor() {
   const [zoom, setZoom] = useState(50);
   const [selectedClipIndex, setSelectedClipIndex] = useState(null);
   const [previewHeight, setPreviewHeight] = useState(380);
+  const [savedPath, setSavedPath] = useState(null);
 
   // Time as ref - NO state, NO re-renders during playback
   const timeRef = useRef(0);
@@ -167,7 +170,7 @@ export default function MusicEditor() {
         createdAt: new Date().toISOString(),
       });
       await window.electronAPI.saveMusicTimeline(outputPath, data);
-      alert(`Saved to: ${outputPath}`);
+      setSavedPath(outputPath);
     } catch (e) {
       setError(e.message);
     }
@@ -253,7 +256,11 @@ export default function MusicEditor() {
                 <IconButton onClick={togglePlayPause} color="primary" size="large">
                   {isPlaying ? <PauseIcon /> : <PlayIcon />}
                 </IconButton>
-                <Typography ref={timeDisplayRef} variant="h5" sx={{ fontFamily: 'monospace' }}>
+                <Typography
+                  ref={timeDisplayRef}
+                  variant="h5"
+                  sx={{ fontFamily: MONO_STACK, fontVariantNumeric: 'tabular-nums' }}
+                >
                   {formatEditorTime(timeRef.current)}
                 </Typography>
               </Stack>
@@ -304,7 +311,13 @@ export default function MusicEditor() {
               <Tooltip title="Zoom Out">
                 <IconButton onClick={handleZoomOut} size="small"><ZoomOutIcon /></IconButton>
               </Tooltip>
-              <Typography variant="body2">{zoom.toFixed(0)} px/s</Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ fontFamily: MONO_STACK, fontVariantNumeric: 'tabular-nums', minWidth: 62, textAlign: 'center' }}
+              >
+                {zoom.toFixed(0)} px/s
+              </Typography>
               <Tooltip title="Zoom In">
                 <IconButton onClick={handleZoomIn} size="small"><ZoomInIcon /></IconButton>
               </Tooltip>
@@ -326,11 +339,23 @@ export default function MusicEditor() {
       )}
 
       {!loading && clips.length === 0 && (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography variant="h6" color="text.secondary" gutterBottom>No clips loaded</Typography>
-          <Typography color="text.secondary">Select a folder with video clips to get started, or load an existing timeline.</Typography>
+        <Paper sx={{ p: 6, textAlign: 'center' }}>
+          <Typography variant="h6" gutterBottom>No clips loaded</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Select a folder with video clips to get started, or load an existing timeline.
+          </Typography>
         </Paper>
       )}
+
+      <Snackbar
+        open={Boolean(savedPath)}
+        autoHideDuration={4000}
+        onClose={() => setSavedPath(null)}
+      >
+        <Alert severity="success" onClose={() => setSavedPath(null)}>
+          Saved to {savedPath}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

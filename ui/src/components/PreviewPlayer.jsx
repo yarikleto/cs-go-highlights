@@ -10,6 +10,8 @@ import {
   formatPreviewTime,
 } from '../lib/musicEditor/timeline';
 import { pathToMediaUrl } from '../lib/musicEditor/media';
+import { tokens } from '../theme/tokens';
+import { MONO_STACK } from '../theme';
 
 const VIDEO_STYLE = 'width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;display:none;';
 
@@ -250,7 +252,15 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
     <Box sx={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box
         ref={containerRef}
-        sx={{ position: 'relative', flex: 1, bgcolor: '#000', borderRadius: 1, overflow: 'hidden', minHeight: 0 }}
+        sx={{
+          position: 'relative',
+          flex: 1,
+          bgcolor: '#000',
+          borderRadius: `${tokens.radius.md}px`,
+          border: `1px solid ${tokens.hairline}`,
+          overflow: 'hidden',
+          minHeight: 0,
+        }}
       >
         <Box
           ref={noClipRef}
@@ -268,8 +278,14 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
           sx={{
             display: 'none',
             position: 'absolute', bottom: 8, left: 8, right: 8,
-            bgcolor: 'rgba(0,0,0,0.7)', borderRadius: 1, px: 1, py: 0.5,
-            color: '#fff', fontSize: 12, zIndex: 2,
+            background: 'rgba(20, 23, 26, 0.70)',
+            backdropFilter: tokens.blur.panel,
+            WebkitBackdropFilter: tokens.blur.panel,
+            border: `1px solid ${tokens.hairline}`,
+            borderRadius: `${tokens.radius.sm}px`,
+            px: 1.25, py: 0.625,
+            color: tokens.text.primary, fontSize: 12, zIndex: 2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}
         />
       </Box>
@@ -277,7 +293,11 @@ const PreviewPlayer = forwardRef(function PreviewPlayer({
       <audio ref={audioRef} style={{ display: 'none' }} />
 
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 1, flexShrink: 0 }}>
-        <Typography ref={timeDisplayRef} variant="body2" sx={{ minWidth: 80 }}>
+        <Typography
+          ref={timeDisplayRef}
+          variant="body2"
+          sx={{ minWidth: 86, fontFamily: MONO_STACK, fontVariantNumeric: 'tabular-nums' }}
+        >
           {formatPreviewTime(initialTime)}
         </Typography>
 

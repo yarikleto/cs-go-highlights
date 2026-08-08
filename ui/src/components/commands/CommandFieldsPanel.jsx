@@ -12,10 +12,19 @@ function CommandFieldsPanel({
 }) {
   return (
     <Paper sx={{ p: 3, mb: 3 }}>
-      <Typography variant="h6" gutterBottom>
+      <Typography
+        sx={{
+          fontSize: '0.6875rem',
+          fontWeight: 700,
+          letterSpacing: '0.09em',
+          textTransform: 'uppercase',
+          color: 'text.disabled',
+          mb: 2.5,
+        }}
+      >
         {title}
       </Typography>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         {fields.map((field) => (
           <CommandField
             key={field.name}
