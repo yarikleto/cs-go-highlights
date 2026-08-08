@@ -14,6 +14,11 @@ import {
   MUSIC,
 } from './config.js';
 import { getHighlights } from './cli/validators.js';
+import {
+  appendOutputTail,
+  formatHlaeDiagnostics,
+  inspectRecordingArtifacts,
+} from './recordingDiagnostics.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -210,16 +215,23 @@ async function recordHighlight(options) {
   };
   cleanupCallbacks.push(cleanupTempFiles);
   
+  let recordingArtifacts;
+
   // Launch HLAE with CS:GO and the demo
   try {
-    await launchHlaeRecording({
+    const launchResult = await launchHlaeRecording({
       hlaePath,
       csgoPath,
       demoPath,
       cfgFileName, // Just the filename, not full path
       highlight,
     });
-    console.log(`    [3/4] Recording completed, CS:GO closed`);
+    recordingArtifacts = inspectRecordingArtifacts(clipFolder, launchResult);
+    console.log(`    [3/4] Recording completed: ${recordingArtifacts.tgaFiles.length} frames in ${path.basename(recordingArtifacts.takeFolder)}`);
+
+    if (voiceChat && !recordingArtifacts.audioFile) {
+      console.warn(`    Warning: Voice chat was requested, but HLAE did not create audio.wav in ${recordingArtifacts.takeFolder}`);
+    }
   } finally {
     // Remove from cleanup callbacks (already handled)
     const idx = cleanupCallbacks.indexOf(cleanupTempFiles);
@@ -240,6 +252,7 @@ async function recordHighlight(options) {
     framerate: DEFAULT_SETTINGS.framerate,
     crf,
     preset,
+    recordingArtifacts,
   });
   console.log(`    [4/4] Encoding completed: ${clipName}.mp4`);
   
@@ -285,6 +298,7 @@ async function recordHighlightDoublePass(options) {
 
   // Path to save voice audio between passes
   const savedVoiceAudio = path.join(clipFolder, 'voice_audio.wav');
+  let pass2RecordingArtifacts;
 
   try {
     // =========================================================================
@@ -313,20 +327,25 @@ async function recordHighlightDoublePass(options) {
 
     console.log(`    [PASS 1/2] Launching HLAE + CS:GO (voice pass, ${highlight.playback.durationSeconds}s, 640x360)...`);
 
-    await launchHlaeRecording({
+    const pass1LaunchResult = await launchHlaeRecording({
       hlaePath, csgoPath, demoPath,
       cfgFileName, highlight,
       settings: AUDIO_ONLY_SETTINGS,
     });
 
-    console.log(`    [PASS 1/2] Voice recording completed`);
+    const pass1RecordingArtifacts = inspectRecordingArtifacts(clipFolder, pass1LaunchResult);
+    console.log(`    [PASS 1/2] Voice recording completed: ${pass1RecordingArtifacts.tgaFiles.length} frames`);
 
     // Extract audio.wav from the take folder
-    const pass1TakeFolder = path.join(clipFolder, 'take0000');
-    const pass1AudioFile = path.join(pass1TakeFolder, 'audio.wav');
+    const pass1TakeFolder = pass1RecordingArtifacts.takeFolder;
+    const pass1AudioFile = pass1RecordingArtifacts.audioFile;
 
-    if (!fs.existsSync(pass1AudioFile)) {
-      throw new Error('Pass 1 failed: no audio.wav found in take folder. Voice audio could not be captured.');
+    if (!pass1AudioFile) {
+      throw new Error([
+        `Pass 1 recorded video frames but did not create ${path.join(pass1TakeFolder, 'audio.wav')}.`,
+        'Voice audio could not be captured. Check the CS:GO console for mirv_streams audio errors.',
+        formatHlaeDiagnostics(pass1LaunchResult),
+      ].join('\n'));
     }
 
     // Save voice audio to a safe location
@@ -358,14 +377,15 @@ async function recordHighlightDoublePass(options) {
 
     console.log(`    [PASS 2/2] Launching HLAE + CS:GO (clean pass, ${highlight.playback.durationSeconds}s)...`);
 
-    await launchHlaeRecording({
+    const pass2LaunchResult = await launchHlaeRecording({
       hlaePath, csgoPath, demoPath,
       cfgFileName, highlight,
     });
 
-    console.log(`    [PASS 2/2] Clean recording completed`);
+    pass2RecordingArtifacts = inspectRecordingArtifacts(clipFolder, pass2LaunchResult);
+    console.log(`    [PASS 2/2] Clean recording completed: ${pass2RecordingArtifacts.tgaFiles.length} frames`);
 
-    const pass2TakeFolder = path.join(clipFolder, 'take0000');
+    const pass2TakeFolder = pass2RecordingArtifacts.takeFolder;
     const pass2AudioFile = path.join(pass2TakeFolder, 'audio.wav');
 
     if (keepVoice) {
@@ -402,11 +422,12 @@ async function recordHighlightDoublePass(options) {
       framerate: DEFAULT_SETTINGS.framerate,
       crf,
       preset,
+      recordingArtifacts: pass2RecordingArtifacts,
     });
     console.log(`    [ENCODE] Main clip: ${clipName}.mp4`);
 
     // Now replace audio with voice and encode voice version
-    const pass2TakeFolder = path.join(clipFolder, 'take0000');
+    const pass2TakeFolder = pass2RecordingArtifacts.takeFolder;
     const pass2AudioFile = path.join(pass2TakeFolder, 'audio.wav');
     fs.copyFileSync(savedVoiceAudio, pass2AudioFile);
 
@@ -419,6 +440,7 @@ async function recordHighlightDoublePass(options) {
       framerate: DEFAULT_SETTINGS.framerate,
       crf,
       preset,
+      recordingArtifacts: pass2RecordingArtifacts,
     });
     console.log(`    [ENCODE] Voice clip: ${clipName}_voice.mp4`);
 
@@ -434,6 +456,7 @@ async function recordHighlightDoublePass(options) {
       framerate: DEFAULT_SETTINGS.framerate,
       crf,
       preset,
+      recordingArtifacts: pass2RecordingArtifacts,
     });
     console.log(`    [ENCODE] Completed: ${clipName}.mp4`);
 
@@ -1295,6 +1318,11 @@ echo "=== VDM file will control playback and recording ==="
 function launchHlaeRecording(options) {
   const { hlaePath, csgoPath, demoPath, cfgFileName, highlight, settings } = options;
   const launchSettings = settings || DEFAULT_SETTINGS;
+  const csgoExecutable = path.join(csgoPath, 'csgo.exe');
+
+  if (!fs.existsSync(csgoExecutable)) {
+    throw new Error(`CS:GO executable not found: ${csgoExecutable}`);
+  }
   
   return new Promise((resolve, reject) => {
     // Build HLAE launch arguments
@@ -1304,7 +1332,7 @@ function launchHlaeRecording(options) {
       '-csgoLauncher',
       '-noGui',
       '-autoStart',
-      '-csgoExe', path.join(csgoPath, 'csgo.exe'),
+      '-csgoExe', csgoExecutable,
       '-gfxEnabled', 'true',
       '-gfxWidth', String(launchSettings.width),
       '-gfxHeight', String(launchSettings.height),
@@ -1324,34 +1352,80 @@ function launchHlaeRecording(options) {
     activeHlaeProcess = hlaeProcess;
     
     let output = '';
+    let settled = false;
+    let timeout = null;
+    const startedAt = Date.now();
+
+    const getResult = (details = {}) => ({
+      code: null,
+      signal: null,
+      durationMs: Date.now() - startedAt,
+      output,
+      ...details,
+    });
+
+    const settle = (callback) => {
+      if (settled) return;
+      settled = true;
+
+      if (activeHlaeProcess === hlaeProcess) {
+        activeHlaeProcess = null;
+      }
+      if (timeout) clearTimeout(timeout);
+
+      callback();
+    };
     
     hlaeProcess.stdout.on('data', (data) => {
-      output += data.toString();
+      output = appendOutputTail(output, data);
     });
     
     hlaeProcess.stderr.on('data', (data) => {
-      output += data.toString();
+      output = appendOutputTail(output, data);
     });
     
-    hlaeProcess.on('close', (code) => {
-      activeHlaeProcess = null;
-      clearTimeout(timeout);
-      if (code === 0 || code === null) {
-        resolve();
-      } else {
-        reject(new Error(`HLAE exited with code ${code}: ${output}`));
-      }
+    hlaeProcess.on('close', (code, signal) => {
+      const result = getResult({ code, signal });
+
+      settle(() => {
+        if (code === 0 && !signal) {
+          resolve(result);
+        } else {
+          reject(new Error([
+            'HLAE did not exit normally, so the recording may be incomplete.',
+            formatHlaeDiagnostics(result),
+          ].join('\n')));
+        }
+      });
     });
     
     hlaeProcess.on('error', (err) => {
-      activeHlaeProcess = null;
-      reject(new Error(`Failed to launch HLAE: ${err.message}`));
+      const result = getResult();
+
+      settle(() => {
+        reject(new Error([
+          `Failed to launch HLAE: ${err.message}`,
+          formatHlaeDiagnostics(result),
+        ].join('\n')));
+      });
     });
     
     // Set a timeout for recording (5 minutes max per clip)
-    const timeout = setTimeout(() => {
-      hlaeProcess.kill();
-      reject(new Error('Recording timeout exceeded (5 minutes)'));
+    timeout = setTimeout(() => {
+      const result = getResult({ timedOut: true });
+
+      settle(() => {
+        try {
+          hlaeProcess.kill();
+        } catch (error) {
+          // The process may already be exiting.
+        }
+
+        reject(new Error([
+          'Recording timeout exceeded (5 minutes).',
+          formatHlaeDiagnostics(result),
+        ].join('\n')));
+      });
     }, 5 * 60 * 1000);
   });
 }
@@ -1360,44 +1434,20 @@ function launchHlaeRecording(options) {
  * Encodes TGA image sequence to MP4 using FFmpeg
  */
 function encodeTgaToMp4(options) {
-  const { inputFolder, clipName, outputPath, framerate, crf, preset } = options;
+  const {
+    inputFolder,
+    clipName,
+    outputPath,
+    framerate,
+    crf,
+    preset,
+    recordingArtifacts,
+  } = options;
   
   return new Promise((resolve, reject) => {
     // HLAE creates structure: clipFolder/take0000/norm/%05d.tga
-    // Find the take folder first (take0000, take0001, etc.)
-    const takeFolders = fs.readdirSync(inputFolder).filter(f => {
-      const fullPath = path.join(inputFolder, f);
-      return fs.statSync(fullPath).isDirectory() && f.startsWith('take');
-    }).sort(); // Sort to get take0000 first
-    
-    if (takeFolders.length === 0) {
-      reject(new Error(`No take folders found in ${inputFolder}`));
-      return;
-    }
-    
-    // Use the first take folder
-    const takeFolder = path.join(inputFolder, takeFolders[0]);
-    
-    // Find the stream folder inside the take folder (e.g., 'norm')
-    const streamFolders = fs.readdirSync(takeFolder).filter(f => {
-      const fullPath = path.join(takeFolder, f);
-      return fs.statSync(fullPath).isDirectory();
-    });
-    
-    if (streamFolders.length === 0) {
-      reject(new Error(`No stream folders found in ${takeFolder}`));
-      return;
-    }
-    
-    // Use the first stream folder (usually 'norm')
-    const streamFolder = path.join(takeFolder, streamFolders[0]);
-    
-    // Detect TGA naming pattern (HLAE uses %05d.tga)
-    const tgaFiles = fs.readdirSync(streamFolder).filter(f => f.endsWith('.tga')).sort();
-    if (tgaFiles.length === 0) {
-      reject(new Error(`No TGA files found in ${streamFolder}`));
-      return;
-    }
+    const artifacts = recordingArtifacts || inspectRecordingArtifacts(inputFolder);
+    const { takeFolder, streamFolder, tgaFiles } = artifacts;
     
     // Determine pattern from first file (e.g., "00000.tga" -> "%05d.tga")
     const firstFile = tgaFiles[0];
