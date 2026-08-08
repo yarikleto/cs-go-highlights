@@ -2,7 +2,7 @@
   {
     "id": "full-legacy-pipeline",
     "name": "Full Legacy Pipeline",
-    "description": "One-click highlight reel from a demo archive. Extracts demos, detects the top 20 highlights, records them with voice chat, adds speedup and overlays, merges into a single video, and compresses it. Just pick an archive and get a ready-to-share video.",
+    "description": "One-click highlight reel from a demo archive. Extracts demos, detects the top 10 highlights, records them with voice chat, adds speedup and overlays, merges into a single video, and compresses it. Just pick an archive and get a ready-to-share video.",
     "params": [
       {
         "name": "archive",
@@ -64,9 +64,9 @@
         "command": "top",
         "options": {
           "highlights": "./output/highlights.json",
-          "count": 20,
+          "count": 10,
           "asc": true,
-          "unique-players": 3,
+          "unique-players": 1,
           "output": "./output/highlights_top.json"
         }
       },
