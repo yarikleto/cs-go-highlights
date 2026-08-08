@@ -29,6 +29,8 @@ import {
   ExpandLess as CollapseIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
+import PageHeader from '../components/shell/PageHeader';
+import { sunkenSurface } from '../theme/glass';
 import { useViewerContext } from '../context/ViewerContext';
 import {
   filterHighlights,
@@ -48,7 +50,7 @@ import {
 
 const TYPE_COLORS = {
   'kill-series': 'primary',
-  'clutch': 'secondary',
+  'clutch': 'success',
   'collateral': 'warning',
   'knife': 'error',
   'one-tap': 'info',
@@ -160,18 +162,13 @@ function HighlightsViewer() {
 
   return (
     <Box sx={{ p: 4, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" fontWeight="bold" gutterBottom>
-          Highlights Viewer
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Browse and analyze detected highlights from highlights.json
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Highlights Viewer"
+        subtitle="Browse and analyze detected highlights from highlights.json"
+      />
 
       {/* File Selection */}
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <Paper sx={{ p: 2, mb: 2.5 }}>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <TextField
             label="Highlights File"
@@ -207,9 +204,9 @@ function HighlightsViewer() {
 
       {/* Summary */}
       {data && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Typography variant="subtitle2">File Type:</Typography>
+        <Paper sx={{ p: 2.5, mb: 2.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+            <Typography variant="subtitle2">File Type</Typography>
             <Chip 
               label={fileType} 
               color={
@@ -249,9 +246,9 @@ function HighlightsViewer() {
 
       {/* Filters */}
       {data && (
-        <Paper sx={{ p: 2, mb: 3 }}>
+        <Paper sx={{ p: 2.5, mb: 2.5 }}>
           <Typography variant="subtitle2" gutterBottom>Filters</Typography>
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, mt: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
             <FormControl sx={{ minWidth: 150 }}>
               <InputLabel>Type</InputLabel>
               <Select
@@ -425,7 +422,7 @@ function HighlightsViewer() {
                   <TableRow>
                     <TableCell colSpan={12} sx={{ p: 0 }}>
                       <Collapse in={expandedRows[h.id]} timeout="auto" unmountOnExit>
-                        <Box sx={{ p: 2, bgcolor: 'background.default' }}>
+                        <Box sx={{ ...sunkenSurface({ radius: 0 }), border: 'none', p: 2.5 }}>
                           <Grid container spacing={2}>
                             <Grid item xs={12}>
                               <Typography variant="subtitle2" gutterBottom>
@@ -518,9 +515,12 @@ function HighlightsViewer() {
 
       {/* Empty State */}
       {!data && !loading && !error && (
-        <Paper sx={{ p: 4, textAlign: 'center' }}>
-          <Typography color="text.secondary">
-            Select a highlights.json file and click Load to view highlights
+        <Paper sx={{ p: 6, textAlign: 'center' }}>
+          <Typography variant="h6" gutterBottom>
+            No file loaded
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Select a highlights.json file and click Load to view highlights.
           </Typography>
         </Paper>
       )}

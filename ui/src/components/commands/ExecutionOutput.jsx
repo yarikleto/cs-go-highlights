@@ -1,10 +1,13 @@
 import React from 'react';
-import { Alert, Box, Paper } from '@mui/material';
+import { Alert, Box } from '@mui/material';
+import { tokens } from '../../theme/tokens';
+import { sunkenSurface } from '../../theme/glass';
+import { MONO_STACK } from '../../theme';
 
 function getLogColor(type) {
-  if (type === 'step-header') return '#64b5f6';
-  if (type === 'stderr') return '#ff6b6b';
-  return '#e0e0e0';
+  if (type === 'step-header') return tokens.accent;
+  if (type === 'stderr') return tokens.status.error;
+  return '#C3C9CE';
 }
 
 function defaultFormatResult(result) {
@@ -30,15 +33,16 @@ function ExecutionOutput({
       )}
 
       {logs.length > 0 && (
-        <Paper
+        <Box
           sx={{
+            ...sunkenSurface({ deep: true }),
             flex: 1,
-            minHeight: 200,
+            minHeight: 220,
             overflow: 'auto',
-            bgcolor: '#0d0d0d',
             p: 2,
-            fontFamily: 'monospace',
-            fontSize: '0.85rem',
+            fontFamily: MONO_STACK,
+            fontSize: '0.8125rem',
+            lineHeight: 1.55,
           }}
         >
           {logs.map((log, i) => (
@@ -47,17 +51,19 @@ function ExecutionOutput({
               component="pre"
               sx={{
                 m: 0,
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
                 color: getLogColor(log.type),
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
-                fontWeight: log.type === 'step-header' ? 'bold' : 'normal',
+                fontWeight: log.type === 'step-header' ? 600 : 400,
               }}
             >
               {log.text}
             </Box>
           ))}
           <div ref={logsEndRef} />
-        </Paper>
+        </Box>
       )}
     </>
   );

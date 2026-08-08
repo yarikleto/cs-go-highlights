@@ -8,8 +8,9 @@ import {
   CardActionArea,
   Grid,
   Chip,
-  Divider,
+  Paper,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   PlayArrow as PlayIcon,
   Build as BuildIcon,
@@ -18,6 +19,33 @@ import {
   Speed as SpeedIcon,
   RocketLaunch as FlowIcon,
 } from '@mui/icons-material';
+import PageHeader from '../components/shell/PageHeader';
+import { tokens, transition } from '../theme/tokens';
+
+const tileSx = {
+  height: '100%',
+  transition: transition(['transform', 'border-color', 'background-color']),
+  '&:hover': {
+    transform: 'translateY(-2px)',
+    borderColor: tokens.hairlineStrong,
+    background: tokens.surface.glassHi,
+  },
+};
+
+function Section({ icon: Icon, title, description, children }) {
+  return (
+    <Box sx={{ mb: 5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 0.5 }}>
+        <Icon sx={{ fontSize: 18, color: 'primary.main' }} />
+        <Typography variant="h5">{title}</Typography>
+      </Box>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        {description}
+      </Typography>
+      {children}
+    </Box>
+  );
+}
 
 function Home() {
   const navigate = useNavigate();
@@ -35,30 +63,21 @@ function Home() {
   const utilityCommands = commands.filter(c => c.category === 'Utility');
 
   const CommandCard = ({ command }) => (
-    <Card 
-      sx={{ 
-        height: '100%',
-        transition: 'transform 0.2s, box-shadow 0.2s',
-        '&:hover': {
-          transform: 'translateY(-4px)',
-          boxShadow: 4,
-        },
-      }}
-    >
-      <CardActionArea 
+    <Card sx={tileSx}>
+      <CardActionArea
         onClick={() => navigate(`/command/${command.id}`)}
-        sx={{ height: '100%', p: 1 }}
+        sx={{ height: '100%', borderRadius: `${tokens.radius.lg}px` }}
       >
-        <CardContent>
+        <CardContent sx={{ p: 2.5 }}>
           <Typography variant="h6" gutterBottom>
             {command.name}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             {command.description}
           </Typography>
-          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
             {command.options?.filter(o => o.required).map((opt) => (
-              <Chip 
+              <Chip
                 key={opt.name}
                 label={opt.label || opt.name}
                 size="small"
@@ -73,61 +92,38 @@ function Home() {
   );
 
   return (
-    <Box sx={{ p: 4 }}>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight="bold" gutterBottom>
-          CS:GO Highlights Tool
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Automatically detect and render impressive gameplay moments from demo files.
-        </Typography>
-      </Box>
+    <Box sx={{ p: 4, maxWidth: 1800 }}>
+      <PageHeader
+        title="CS:GO Highlights Tool"
+        subtitle="Automatically detect and render impressive gameplay moments from demo files."
+      />
 
-      {/* Flows */}
       {flows.length > 0 && (
-        <Box sx={{ mb: 4 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <FlowIcon color="secondary" />
-            <Typography variant="h5">Flows</Typography>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Pre-configured pipelines that run multiple commands in sequence.
-          </Typography>
-
+        <Section
+          icon={FlowIcon}
+          title="Flows"
+          description="Pre-configured pipelines that run multiple commands in sequence."
+        >
           <Grid container spacing={2}>
             {flows.map((flow) => (
-              <Grid item xs={12} sm={6} md={4} key={flow.id}>
-                <Card
-                  sx={{
-                    height: '100%',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: 4,
-                    },
-                    border: '1px solid',
-                    borderColor: 'secondary.main',
-                  }}
-                >
+              <Grid item xs={12} sm={6} md={4} xl={3} key={flow.id}>
+                <Card sx={{ ...tileSx, borderColor: alpha(tokens.accent, 0.3) }}>
                   <CardActionArea
                     onClick={() => navigate(`/flow/${flow.id}`)}
-                    sx={{ height: '100%', p: 1 }}
+                    sx={{ height: '100%', borderRadius: `${tokens.radius.lg}px` }}
                   >
-                    <CardContent>
+                    <CardContent sx={{ p: 2.5 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                        <FlowIcon color="secondary" fontSize="small" />
-                        <Typography variant="h6">
-                          {flow.name}
-                        </Typography>
+                        <FlowIcon sx={{ fontSize: 17, color: 'primary.main' }} />
+                        <Typography variant="h6">{flow.name}</Typography>
                       </Box>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                         {flow.description}
                       </Typography>
                       <Chip
                         label={`${flow.steps?.length || 0} steps`}
                         size="small"
-                        color="secondary"
+                        color="primary"
                         variant="outlined"
                       />
                     </CardContent>
@@ -136,91 +132,76 @@ function Home() {
               </Grid>
             ))}
           </Grid>
-        </Box>
+        </Section>
       )}
 
-      <Divider sx={{ my: 4 }} />
-
-      {/* Quick Start Pipeline */}
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <PlayIcon color="primary" />
-          <Typography variant="h5">Pipeline</Typography>
-        </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Run these commands in order to go from demo files to final highlight video.
-        </Typography>
-        
+      <Section
+        icon={PlayIcon}
+        title="Pipeline"
+        description="Run these commands in order to go from demo files to final highlight video."
+      >
         <Grid container spacing={2}>
           {pipelineCommands.map((cmd) => (
-            <Grid item xs={12} sm={6} md={4} key={cmd.id}>
+            <Grid item xs={12} sm={6} md={4} xl={3} key={cmd.id}>
               <CommandCard command={cmd} />
             </Grid>
           ))}
         </Grid>
-      </Box>
+      </Section>
 
-      <Divider sx={{ my: 4 }} />
-
-      {/* Utility Commands */}
-      <Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <BuildIcon color="secondary" />
-          <Typography variant="h5">Utility</Typography>
-        </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Additional tools for specific tasks.
-        </Typography>
-        
+      <Section
+        icon={BuildIcon}
+        title="Utility"
+        description="Additional tools for specific tasks."
+      >
         <Grid container spacing={2}>
           {utilityCommands.map((cmd) => (
-            <Grid item xs={12} sm={6} md={4} key={cmd.id}>
+            <Grid item xs={12} sm={6} md={4} xl={3} key={cmd.id}>
               <CommandCard command={cmd} />
             </Grid>
           ))}
         </Grid>
-      </Box>
+      </Section>
 
-      {/* V2 Pipeline Guide */}
-      <Box sx={{ mt: 4, p: 3, bgcolor: 'background.paper', borderRadius: 2 }}>
+      <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>
           Recommended V2 Pipeline
         </Typography>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Chip 
-            icon={<AnalyticsIcon />} 
-            label="1. Analyze V2" 
+        <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', flexWrap: 'wrap', mt: 2 }}>
+          <Chip
+            icon={<AnalyticsIcon />}
+            label="1. Analyze V2"
             onClick={() => navigate('/command/analyze-v2')}
             clickable
           />
-          <Typography color="text.secondary">→</Typography>
-          <Chip 
-            icon={<SpeedIcon />} 
-            label="2. Analyze Postprocess UI" 
+          <Typography color="text.disabled">→</Typography>
+          <Chip
+            icon={<SpeedIcon />}
+            label="2. Analyze Postprocess UI"
             onClick={() => navigate('/command/analyze-postprocess-ui')}
             clickable
           />
-          <Typography color="text.secondary">→</Typography>
-          <Chip 
-            icon={<MovieIcon />} 
-            label="3. Record" 
+          <Typography color="text.disabled">→</Typography>
+          <Chip
+            icon={<MovieIcon />}
+            label="3. Record"
             onClick={() => navigate('/command/record')}
             clickable
           />
-          <Typography color="text.secondary">→</Typography>
-          <Chip 
-            label="4. Postprocess UI" 
+          <Typography color="text.disabled">→</Typography>
+          <Chip
+            label="4. Postprocess UI"
             onClick={() => navigate('/command/postprocess-ui')}
             clickable
           />
-          <Typography color="text.secondary">→</Typography>
-          <Chip 
-            label="5. Merge" 
+          <Typography color="text.disabled">→</Typography>
+          <Chip
+            label="5. Merge"
             onClick={() => navigate('/command/merge')}
             clickable
           />
         </Box>
-      </Box>
+      </Paper>
     </Box>
   );
 }

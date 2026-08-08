@@ -28,6 +28,17 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     show: false,
+    // Matches the backdrop base so there is no white flash before the
+    // renderer paints.
+    backgroundColor: '#14171A',
+    // Custom glass title bar, but Windows keeps drawing its own caption
+    // buttons so snap layouts and window habits still work.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#00000000',
+      symbolColor: '#98A0A8',
+      height: 44,
+    },
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
