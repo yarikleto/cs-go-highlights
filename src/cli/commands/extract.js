@@ -9,7 +9,6 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { spawn } from 'child_process';
 import { createGunzip } from 'zlib';
 import { pipeline } from 'stream/promises';
 import yauzl from 'yauzl';
@@ -173,109 +172,7 @@ async function extractRecursive(archivePath, extractTo, demoFiles, depth) {
   await scanDirectory(extractTo, demoFiles, depth);
 }
 
-/**
- * Extract a .zip archive after validating entry paths.
- */
-async function extractZip(archivePath, extractTo) {
-  await validateZipEntries(archivePath, extractTo);
-
-  try {
-    await extractZipWithSystemTool(archivePath, extractTo);
-  } catch (systemError) {
-    console.warn(`  System ZIP extractor failed: ${systemError.message}`);
-    console.warn('  Falling back to yauzl ZIP extractor...');
-    await extractZipWithYauzl(archivePath, extractTo);
-  }
-}
-
-function validateZipEntries(archivePath, extractTo) {
-  return new Promise((resolve, reject) => {
-    yauzl.open(archivePath, { lazyEntries: true }, (err, zipfile) => {
-      if (err) return reject(err);
-
-      zipfile.on('entry', (entry) => {
-        try {
-          getSafeExtractPath(extractTo, entry.fileName);
-        } catch (error) {
-          zipfile.close();
-          reject(error);
-          return;
-        }
-
-        zipfile.readEntry();
-      });
-      zipfile.on('end', resolve);
-      zipfile.on('error', reject);
-      zipfile.readEntry();
-    });
-  });
-}
-
-async function extractZipWithSystemTool(archivePath, extractTo) {
-  const commands = getZipExtractorCommands(archivePath, extractTo);
-  const errors = [];
-
-  for (const { command, args } of commands) {
-    try {
-      await runProcess(command, args);
-      return;
-    } catch (error) {
-      errors.push(`${command}: ${error.message}`);
-    }
-  }
-
-  throw new Error(errors.join('; '));
-}
-
-function getZipExtractorCommands(archivePath, extractTo) {
-  if (process.platform === 'win32') {
-    return [
-      {
-        command: 'powershell.exe',
-        args: [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          "$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Force",
-          archivePath,
-          extractTo,
-        ],
-      },
-      { command: 'tar', args: ['-xf', archivePath, '-C', extractTo] },
-    ];
-  }
-
-  return [
-    { command: 'unzip', args: ['-qq', '-o', archivePath, '-d', extractTo] },
-    { command: 'bsdtar', args: ['-xf', archivePath, '-C', extractTo] },
-    { command: 'tar', args: ['-xf', archivePath, '-C', extractTo] },
-  ];
-}
-
-function runProcess(command, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-
-    child.stderr.on('data', chunk => {
-      stderr += chunk.toString();
-    });
-    child.on('error', reject);
-    child.on('close', code => {
-      if (code === 0) {
-        resolve();
-      } else {
-        const message = stderr.trim() || `exit code ${code}`;
-        reject(new Error(message));
-      }
-    });
-  });
-}
-
-/**
- * Extract a .zip archive using yauzl.
- */
-function extractZipWithYauzl(archivePath, extractTo) {
+function extractZip(archivePath, extractTo) {
   return new Promise((resolve, reject) => {
     yauzl.open(archivePath, { lazyEntries: true }, (err, zipfile) => {
       if (err) return reject(err);

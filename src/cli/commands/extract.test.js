@@ -39,6 +39,93 @@ test('extractCommand extracts .dem.gz files from zip archives and skips macOS me
   }
 });
 
+test('extract CLI treats metacharacters in archive paths as data', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'extract-path-data-test-'));
+
+  try {
+    const fixturePath = path.join(tmpDir, 'fixture.zip');
+    const archivePath = path.join(tmpDir, "archive;$('payload');.zip");
+    const outputPath = path.join(tmpDir, "out;$('payload');");
+
+    await createZip(fixturePath, [
+      {
+        name: 'match.dem',
+        data: Buffer.from('metacharacter path payload'),
+      },
+    ]);
+    fs.renameSync(fixturePath, archivePath);
+
+    const result = await runCli([
+      'src/index.js',
+      'extract',
+      '--archive',
+      archivePath,
+      '--output',
+      outputPath,
+    ]);
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(fs.readFileSync(path.join(outputPath, 'match.dem'), 'utf8'), 'metacharacter path payload');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('extract CLI does not execute ZIP utilities from PATH', { skip: process.platform === 'win32' }, async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'extract-path-test-'));
+
+  try {
+    const archivePath = path.join(tmpDir, 'archive.zip');
+    const outputPath = path.join(tmpDir, 'out');
+    const binPath = path.join(tmpDir, 'bin');
+    const markerPath = path.join(tmpDir, 'external-tool-ran');
+
+    await createZip(archivePath, [
+      {
+        name: 'match.dem',
+        data: Buffer.from('isolated demo payload'),
+      },
+    ]);
+
+    fs.mkdirSync(binPath);
+    for (const command of ['unzip', 'bsdtar', 'tar']) {
+      const shimPath = path.join(binPath, command);
+      fs.writeFileSync(shimPath, [
+        '#!/bin/sh',
+        `printf '%s\\n' '${command}' >> "$EXTRACTOR_MARKER"`,
+        'exit 1',
+        '',
+      ].join('\n'));
+      fs.chmodSync(shimPath, 0o755);
+    }
+
+    const result = await runCli([
+      'src/index.js',
+      'extract',
+      '--archive',
+      archivePath,
+      '--output',
+      outputPath,
+    ], {
+      env: {
+        ...process.env,
+        PATH: binPath,
+        EXTRACTOR_MARKER: markerPath,
+      },
+    });
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(
+      fs.existsSync(markerPath),
+      false,
+      'ZIP extraction must not launch executables resolved from PATH',
+    );
+    assert.equal(fs.readFileSync(path.join(outputPath, 'match.dem'), 'utf8'), 'isolated demo payload');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('extractCommand accepts a direct .dem.gz input', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'extract-gz-test-'));
 
@@ -101,10 +188,11 @@ async function runQuietly(fn) {
   }
 }
 
-function runCli(args) {
+function runCli(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, {
       cwd: REPO_ROOT,
+      ...options,
     });
     let stdout = '';
     let stderr = '';
