@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="docs/banner.svg" alt="CS:GO Highlights" width="800"/>
 </p>
@@ -29,7 +31,7 @@
 
 | Dependency | Description |
 |------------|-------------|
-| **[Node.js](https://nodejs.org/)** (v22.12+) | Runtime |
+| **[Node.js](https://nodejs.org/)** (v22.12+) | Runtime — Node 22.x only |
 | **[FFmpeg](https://ffmpeg.org/)** | Video encoding — must be in PATH |
 | **[HLAE](https://www.advancedfx.org/)** | Half-Life Advanced Effects — video capture |
 | **CS:GO Legacy** | HLAE does not support CS2. Install via Steam: CS2 → Properties → Betas → `csgo_legacy` |
