@@ -1,8 +1,8 @@
 /**
- * @fileoverview Shared command configuration for CLI and Electron UI
+ * @fileoverview Shared command configuration for the CLI and the web UI
  * 
  * This is the single source of truth for all command options.
- * Both CLI (commander.js) and Electron UI use this config.
+ * Both the CLI (commander.js) and the web UI use this config.
  * 
  * The actual command definitions are stored in commands.json
  * This file provides ESM exports and helper functions.
@@ -23,6 +23,7 @@ const require = createRequire(import.meta.url);
 
 // Load commands from JSON (single source of truth)
 export const COMMANDS = require('./commands.json');
+export const FLOWS = require('./flows.json');
 
 /**
  * Get command by ID

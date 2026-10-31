@@ -23,7 +23,9 @@ import {
 import CommandFieldsPanel from '../components/commands/CommandFieldsPanel';
 import ExecutionOutput from '../components/commands/ExecutionOutput';
 import PageHeader from '../components/shell/PageHeader';
-import { useElectronApi } from '../hooks/commands/useElectronApi';
+import { useApi } from '../hooks/useApi';
+import { useFlowRun } from '../context/FlowRunContext';
+import { IDLE_FLOW_RUN } from '../lib/flowRun';
 
 function formatFlowResult(result) {
   return result.success
@@ -35,11 +37,6 @@ function FlowPage() {
   const { flowId } = useParams();
   const [flow, setFlow] = useState(null);
   const [params, setParams] = useState({});
-  const [running, setRunning] = useState(false);
-  const [currentStep, setCurrentStep] = useState(-1);
-  const [stepStatuses, setStepStatuses] = useState([]);
-  const [logs, setLogs] = useState([]);
-  const [result, setResult] = useState(null);
   const logsEndRef = useRef(null);
   const {
     apiError,
@@ -48,7 +45,10 @@ function FlowPage() {
     getApi,
     handleApiError,
     callApi,
-  } = useElectronApi();
+  } = useApi();
+  const { flowRun, markStartRequested, markStartFailed, clearFlowRun } = useFlowRun();
+  const { isRunning, currentStep, stepStatuses, logs, result } = flowRun.flowId === flowId ? flowRun : IDLE_FLOW_RUN;
+  const isOtherFlowRunning = flowRun.isRunning && flowRun.flowId !== flowId;
   const showApiError = apiError && apiError !== result?.error;
 
   useEffect(() => {
@@ -73,7 +73,6 @@ function FlowPage() {
       clearApiError();
       setFlow(nextFlow);
       setParams(defaults);
-      setStepStatuses(nextFlow.steps.map(() => 'pending'));
     };
 
     loadFlow();
@@ -82,45 +81,6 @@ function FlowPage() {
       isMounted = false;
     };
   }, [flowId, callApi, clearApiError, setApiError]);
-
-  useEffect(() => {
-    const api = getApi('Electron API is unavailable. Flow output cannot be received.');
-    if (!api) return undefined;
-
-    try {
-      const unsubs = [
-        api.onFlowStepStart((data) => {
-          setCurrentStep(data.index);
-          setStepStatuses((prev) => {
-            const next = [...prev];
-            next[data.index] = 'running';
-            return next;
-          });
-          setLogs((prev) => [...prev, { type: 'step-header', text: `\n━━━ Step ${data.index + 1}/${data.total}: ${data.name} ━━━\n` }]);
-        }),
-        api.onFlowOutput((data) => {
-          setLogs((prev) => [...prev, data]);
-        }),
-        api.onFlowStepComplete((data) => {
-          setStepStatuses((prev) => {
-            const next = [...prev];
-            next[data.index] = data.success ? 'done' : 'failed';
-            return next;
-          });
-        }),
-        api.onFlowComplete((data) => {
-          setRunning(false);
-          setCurrentStep(-1);
-          setResult(data);
-        }),
-      ];
-
-      return () => unsubs.forEach((fn) => fn?.());
-    } catch (error) {
-      handleApiError(error, 'Failed to subscribe to flow output');
-      return undefined;
-    }
-  }, [getApi, handleApiError]);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -132,11 +92,11 @@ function FlowPage() {
 
   const handleBrowse = async (field, browseType) => {
     const fallback = `Failed to select ${field.label || field.name}`;
-    const path = await callApi((api) => {
-      if (browseType === 'folder') return api.selectFolder();
-      if (browseType === 'save-file') return api.selectSaveFile(field.filters);
-      return api.selectFile(field.filters);
-    }, fallback);
+    const path = await callApi((api) => api.pickPath({
+      mode: browseType,
+      filters: field.filters,
+      initialPath: params[field.name],
+    }), fallback);
 
     if (path) {
       handleParamChange(field.name, path);
@@ -144,26 +104,16 @@ function FlowPage() {
   };
 
   const handleRun = async () => {
-    const api = getApi();
-    if (!api) return;
-
     clearApiError();
-    setLogs([]);
-    setResult(null);
-    setStepStatuses(flow.steps.map(() => 'pending'));
-    setCurrentStep(-1);
-    setRunning(true);
+    markStartRequested(flowId);
 
     try {
-      const response = await api.runFlow(flowId, params);
+      const response = await getApi().runFlow(flowId, params);
       if (!response?.started) {
         throw new Error(response?.error || 'Flow did not start');
       }
     } catch (error) {
-      const message = handleApiError(error, 'Failed to start flow');
-      setRunning(false);
-      setCurrentStep(-1);
-      setResult({ success: false, error: message });
+      markStartFailed(handleApiError(error, 'Failed to start flow'));
     }
   };
 
@@ -172,10 +122,7 @@ function FlowPage() {
   };
 
   const handleClear = () => {
-    setLogs([]);
-    setResult(null);
-    setStepStatuses(flow?.steps.map(() => 'pending') || []);
-    setCurrentStep(-1);
+    clearFlowRun();
     clearApiError();
   };
 
@@ -242,7 +189,7 @@ function FlowPage() {
         <Typography variant="h6" gutterBottom>
           Steps ({completedSteps}/{flow.steps.length})
         </Typography>
-        {running && (
+        {isRunning && (
           <LinearProgress
             variant="determinate"
             value={progress}
@@ -281,13 +228,13 @@ function FlowPage() {
 
       {/* Run / Stop */}
       <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-        {!running ? (
+        {!isRunning ? (
           <Button
             variant="contained"
             size="large"
             startIcon={<PlayIcon />}
             onClick={handleRun}
-            disabled={!canRun()}
+            disabled={!canRun() || isOtherFlowRunning}
           >
             Run Flow
           </Button>
@@ -303,7 +250,7 @@ function FlowPage() {
           </Button>
         )}
 
-        {logs.length > 0 && !running && (
+        {logs.length > 0 && !isRunning && (
           <Button
             variant="outlined"
             startIcon={<ClearIcon />}

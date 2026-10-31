@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { api } from '../lib/api/client';
 
 const CommandContext = createContext(null);
 
@@ -16,7 +17,14 @@ export function CommandProvider({ children }) {
   const [commandResults, setCommandResults] = useState({});
   
   // Currently running command
-  const [runningCommand, setRunningCommand] = useState(null);
+  const [runningCommand, setRunningCommandState] = useState(null);
+  const runningCommandRef = useRef(null);
+
+  // The ref changes synchronously so events replayed right after a reload land on the right command.
+  const setRunningCommand = useCallback((commandId) => {
+    runningCommandRef.current = commandId;
+    setRunningCommandState(commandId);
+  }, []);
 
   // Get options for a specific command
   const getOptions = useCallback((commandId) => {
@@ -98,6 +106,29 @@ export function CommandProvider({ children }) {
   const isCommandRunning = useCallback((commandId) => {
     return runningCommand === commandId;
   }, [runningCommand]);
+
+  useEffect(() => {
+    const unsubscribes = [
+      api.onJobState(({ kind, id }) => {
+        if (kind === 'command' && runningCommandRef.current !== id) {
+          clearLogs(id);
+          setRunningCommand(id);
+        } else if (kind === null && runningCommandRef.current) {
+          setRunningCommand(null);
+        }
+      }),
+      api.onCommandOutput((data) => {
+        if (runningCommandRef.current) addLog(runningCommandRef.current, data);
+      }),
+      api.onCommandComplete((data) => {
+        if (!runningCommandRef.current) return;
+        setResult(runningCommandRef.current, data);
+        setRunningCommand(null);
+      }),
+    ];
+
+    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
+  }, [addLog, clearLogs, setResult, setRunningCommand]);
 
   const value = {
     // Options

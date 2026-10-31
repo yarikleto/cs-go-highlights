@@ -12,7 +12,7 @@
     "start": "node src/index.js",
     "dev": "npm run dev --prefix ui",
     "build": "npm run build --prefix ui",
-    "test": "node --test \"src/**/*.test.js\""
+    "test": "node --test \"src/**/*.test.js\" \"ui/src/**/*.test.js\""
   },
   "engines": {
     "node": ">=22.12 <23"

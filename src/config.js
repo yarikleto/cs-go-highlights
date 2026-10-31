@@ -37,6 +37,7 @@ export const PATHS = Object.freeze({
   highlightsFinal: `${OUTPUT_DIR}/highlights_final.mp4`,
   timestamps: `${OUTPUT_DIR}/timestamps.txt`,
   musicMapping: `${OUTPUT_DIR}/music-mapping.json`,
+  uiConfig: `${TEMP_DIR}/ui-config.json`,
   // External tools (Windows default paths)
   hlae: 'C:\\Program Files (x86)\\HLAE\\hlae.exe',
   csgo: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive',

@@ -17,7 +17,7 @@ import CommandFieldsPanel from '../components/commands/CommandFieldsPanel';
 import ExecutionOutput from '../components/commands/ExecutionOutput';
 import PageHeader from '../components/shell/PageHeader';
 import { useCommandContext } from '../context/CommandContext';
-import { useElectronApi } from '../hooks/commands/useElectronApi';
+import { useApi } from '../hooks/useApi';
 
 function formatCommandResult(result) {
   if (result.success) return 'Command completed successfully!';
@@ -38,7 +38,6 @@ function CommandPage() {
   const [command, setCommand] = useState(null);
   const logsEndRef = useRef(null);
   const initializedRef = useRef({});
-  const runningCommandRef = useRef(null);
   const {
     apiError,
     setApiError,
@@ -46,7 +45,7 @@ function CommandPage() {
     getApi,
     handleApiError,
     callApi,
-  } = useElectronApi();
+  } = useApi();
   
   // Use context for persistent state
   const {
@@ -54,7 +53,6 @@ function CommandPage() {
     initializeOptions,
     updateOption,
     getLogs,
-    addLog,
     clearLogs,
     getResult,
     setResult,
@@ -107,44 +105,6 @@ function CommandPage() {
     };
   }, [commandId, initializeOptions, callApi, clearApiError, setApiError]);
 
-  useEffect(() => {
-    runningCommandRef.current = runningCommand;
-  }, [runningCommand]);
-
-  // Subscribe to command output
-  useEffect(() => {
-    const api = getApi('Electron API is unavailable. Command output cannot be received.');
-    if (!api) return undefined;
-
-    try {
-      const unsubOutput = api.onCommandOutput((data) => {
-        const activeCommand = runningCommandRef.current;
-
-        if (activeCommand) {
-          addLog(activeCommand, data);
-        }
-      });
-
-      const unsubComplete = api.onCommandComplete((data) => {
-        const activeCommand = runningCommandRef.current;
-
-        if (activeCommand) {
-          setResult(activeCommand, data);
-          runningCommandRef.current = null;
-          setRunningCommand(null);
-        }
-      });
-
-      return () => {
-        unsubOutput?.();
-        unsubComplete?.();
-      };
-    } catch (error) {
-      handleApiError(error, 'Failed to subscribe to command output');
-      return undefined;
-    }
-  }, [addLog, setResult, setRunningCommand, getApi, handleApiError]);
-
   // Auto-scroll logs
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -176,11 +136,11 @@ function CommandPage() {
 
   const handleBrowse = async (field, browseType) => {
     const fallback = `Failed to select ${field.label || field.name}`;
-    const path = await callApi((api) => {
-      if (browseType === 'folder') return api.selectFolder();
-      if (browseType === 'save-file') return api.selectSaveFile(field.filters);
-      return api.selectFile(field.filters);
-    }, fallback);
+    const path = await callApi((api) => api.pickPath({
+      mode: browseType,
+      filters: field.filters,
+      initialPath: options[field.name],
+    }), fallback);
 
     if (path) {
       handleOptionChange(field.name, path);
@@ -189,11 +149,9 @@ function CommandPage() {
 
   const handleRun = async () => {
     const api = getApi();
-    if (!api) return;
 
     clearApiError();
     clearLogs(commandId);
-    runningCommandRef.current = commandId;
     setRunningCommand(commandId);
 
     try {
@@ -204,7 +162,6 @@ function CommandPage() {
     } catch (error) {
       const message = handleApiError(error, 'Failed to start command');
       setResult(commandId, { success: false, code: null, error: message });
-      runningCommandRef.current = null;
       setRunningCommand(null);
     }
   };
@@ -212,7 +169,6 @@ function CommandPage() {
   const handleStop = async () => {
     const stopped = await callApi((api) => api.stopCommand(), 'Failed to stop command');
     if (stopped !== null) {
-      runningCommandRef.current = null;
       setRunningCommand(null);
     }
   };

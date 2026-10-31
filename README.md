@@ -8,7 +8,6 @@
   <a href="https://github.com/yarikleto/cs-go-highlights/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/node-22.12%2B-brightgreen.svg" alt="Node.js">
   <img src="https://img.shields.io/badge/platform-Windows%20only-lightgrey.svg" alt="Platform">
-  <img src="https://img.shields.io/badge/electron-41-blue.svg" alt="Electron">
 </p>
 
 <p align="center">
@@ -46,13 +45,16 @@ npm install
 
 ## Getting Started
 
-Launch the desktop app:
+Build the web UI once (and again after pulling UI changes), then start it from the CLI:
 
 ```bash
-npm run dev
+npm run build
+npm start -- ui
 ```
 
-This opens the Electron UI where you can:
+The command prints a sign-in URL such as `http://127.0.0.1:4280/session?token=...`. Open it in a browser on the same machine. The server listens on `127.0.0.1` only, and the token keeps other websites from controlling it. Use `--port <n>` to change the port, and Ctrl+C to stop. See [`ui` in the CLI docs](docs/cli-commands.md#ui).
+
+In the UI you can:
 
 1. **Configure paths** — set your demos folder, HLAE location, and CS:GO installation path in the Settings page
 2. **Run workflows** — use the built-in pipelines (e.g., "Full Legacy Pipeline") to analyze demos, record clips, apply effects, and merge into a final video

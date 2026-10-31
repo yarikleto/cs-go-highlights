@@ -91,6 +91,43 @@ function getMediaDuration(filePath) {
 }
 
 /**
+ * @returns {Promise<number>} duration in seconds
+ */
+function probeMediaDurationSeconds(filePath, { spawnProcess = spawn } = {}) {
+  const args = ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', filePath];
+
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawnProcess('ffprobe', args, { windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+
+    ffprobe.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    ffprobe.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffprobe.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffprobe failed: ${stderr.trim()}`));
+        return;
+      }
+
+      try {
+        resolve(parseFloat(JSON.parse(stdout).format?.duration || 0));
+      } catch (error) {
+        reject(new Error(`Failed to parse ffprobe output: ${error.message}`));
+      }
+    });
+
+    ffprobe.on('error', (error) => {
+      reject(new Error(`Failed to run ffprobe: ${error.message}`));
+    });
+  });
+}
+
+/**
  * Map compression power level (1-10) to CRF value
  * 
  * @param {number} power - Compression power (1 = light, 10 = maximum)
@@ -106,5 +143,6 @@ function powerToCrf(power) {
 export {
   runFfmpegCompress,
   getMediaDuration,
+  probeMediaDurationSeconds,
   powerToCrf,
 };

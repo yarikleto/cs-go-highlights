@@ -32,6 +32,8 @@ import {
 import PageHeader from '../components/shell/PageHeader';
 import { sunkenSurface } from '../theme/glass';
 import { useViewerContext } from '../context/ViewerContext';
+import { useFilePicker } from '../context/FilePickerContext';
+import { api } from '../lib/api/client';
 import {
   filterHighlights,
   formatDistanceMeters,
@@ -70,6 +72,7 @@ function HighlightsViewer() {
     expandedRows, setExpandedRows,
     clearFilters,
   } = useViewerContext();
+  const { pickPath } = useFilePicker();
 
   const [loading, setLoading] = useState(false);
 
@@ -80,8 +83,7 @@ function HighlightsViewer() {
     setError(null);
     
     try {
-      // Use IPC to read file
-      const content = await window.electronAPI.readFile(filePath);
+      const content = await api.readFile(filePath);
       const parsed = JSON.parse(content);
       setData(parsed);
     } catch (e) {
@@ -93,9 +95,10 @@ function HighlightsViewer() {
   };
 
   const handleSelectFile = async () => {
-    const path = await window.electronAPI.selectFile({ 
-      name: 'JSON', 
-      extensions: ['json'] 
+    const path = await pickPath({
+      mode: 'file',
+      filters: { name: 'JSON', extensions: ['json'] },
+      initialPath: filePath,
     });
     if (path) {
       setFilePath(path);

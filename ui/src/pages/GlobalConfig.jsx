@@ -13,6 +13,8 @@ import {
 import ConfigSection from '../components/config/ConfigSection';
 import { CONFIG_SECTIONS } from '../components/config/configSections';
 import PageHeader from '../components/shell/PageHeader';
+import { useFilePicker } from '../context/FilePickerContext';
+import { api } from '../lib/api/client';
 
 function GlobalConfig() {
   const [config, setConfig] = useState(null);
@@ -21,13 +23,14 @@ function GlobalConfig() {
   const [loadError, setLoadError] = useState('');
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [expanded, setExpanded] = useState(['paths', 'detection']);
+  const { pickPath } = useFilePicker();
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
     setLoadError('');
 
     try {
-      const cfg = await window.electronAPI.getConfig();
+      const cfg = await api.getConfig();
       setConfig(cfg);
     } catch (e) {
       const message = e.message ? `Failed to load config: ${e.message}` : 'Failed to load config';
@@ -50,7 +53,7 @@ function GlobalConfig() {
     setSaving(true);
 
     try {
-      const result = await window.electronAPI.saveConfig(config);
+      const result = await api.saveConfig(config);
       if (result?.success) {
         setSnackbar({ open: true, message: 'Config saved successfully!', severity: 'success' });
       } else {
@@ -76,7 +79,7 @@ function GlobalConfig() {
 
   const handleSelectFolder = async (section, key) => {
     try {
-      const path = await window.electronAPI.selectFolder();
+      const path = await pickPath({ mode: 'folder', initialPath: config?.[section]?.[key] });
       if (path) {
         handleChange(section, key, path);
       }
@@ -88,7 +91,7 @@ function GlobalConfig() {
 
   const handleSelectFile = async (section, key) => {
     try {
-      const path = await window.electronAPI.selectFile();
+      const path = await pickPath({ mode: 'file', initialPath: config?.[section]?.[key] });
       if (path) {
         handleChange(section, key, path);
       }

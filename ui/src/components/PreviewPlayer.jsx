@@ -76,7 +76,7 @@ function syncMediaCurrentTime(media, time, threshold = 0.3) {
 
 /**
  * PreviewPlayer keeps one <video> element per clip, but sources each element
- * through local-media:// so the renderer does not read full clips into Blob URLs.
+ * through the server's /media route so the browser streams clips instead of loading them into Blob URLs.
  */
 const PreviewPlayer = forwardRef(function PreviewPlayer({
   clips,

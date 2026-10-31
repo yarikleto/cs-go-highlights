@@ -21,6 +21,7 @@ import {
 } from '@mui/icons-material';
 import PageHeader from '../components/shell/PageHeader';
 import { tokens, transition } from '../theme/tokens';
+import { api } from '../lib/api/client';
 
 const tileSx = {
   height: '100%',
@@ -53,10 +54,8 @@ function Home() {
   const [flows, setFlows] = useState([]);
 
   useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.getCommands().then(setCommands);
-      window.electronAPI.getFlows().then(setFlows);
-    }
+    api.getCommands().then(setCommands).catch(error => console.error('Failed to load commands:', error));
+    api.getFlows().then(setFlows).catch(error => console.error('Failed to load flows:', error));
   }, []);
 
   const pipelineCommands = commands.filter(c => c.category === 'Pipeline');

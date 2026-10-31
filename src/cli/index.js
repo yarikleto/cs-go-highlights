@@ -21,7 +21,7 @@
  * - top          - Select top N highlights by impressiveness score
  * 
  * Commands are registered from the shared config (src/shared/commandsConfig.js)
- * which is also used by the Electron UI.
+ * which is also used by the web UI (`ui` command).
  * 
  * @example
  * # Full pipeline
@@ -50,7 +50,9 @@ import {
   timestampsCommand,
   topCommand,
   applyMusicCommand,
+  uiCommand,
 } from './commands/index.js';
+import { DEFAULT_UI_PORT } from '../server/constants.js';
 import { registerAllCommands } from './registerCommands.js';
 
 // CLI metadata
@@ -81,6 +83,13 @@ const actions = {
 
 // Register all commands from shared config
 registerAllCommands(program, actions);
+
+program
+  .command('ui')
+  .description('Start the local web UI on 127.0.0.1 and print its sign-in URL')
+  .option('--port <n>', 'Port to listen on', String(DEFAULT_UI_PORT))
+  .option('--dev', 'Development mode: trust the Vite dev server origin and skip the ui/dist check')
+  .action(uiCommand);
 
 // Parse CLI arguments
 program.parse(process.argv);

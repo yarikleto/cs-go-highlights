@@ -1,19 +1,16 @@
 {
   "name": "csgo-highlights-ui",
   "version": "1.0.0",
-  "description": "Electron UI for CS:GO Highlights Tool",
+  "description": "Web UI for CS:GO Highlights Tool",
   "author": "Yarik Leto",
   "license": "MIT",
-  "main": "main/index.js",
+  "type": "module",
   "engines": {
     "node": ">=22.12 <23"
   },
   "scripts": {
-    "dev": "concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
-    "dev:vite": "vite",
-    "dev:electron": "wait-on http://localhost:5173 -t 30000 && electron .",
-    "build": "vite build && electron-builder",
-    "build:win": "vite build && electron-builder --win",
+    "dev": "concurrently -k -n vite,api \"vite\" \"node ../src/index.js ui --dev\"",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -30,55 +27,6 @@
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^8.2.2",
-    "electron": "^42.11.16",
-    "electron-builder": "^26.15.3",
-    "vite": "^8.3.5",
-    "wait-on": "^7.2.0"
-  },
-  "build": {
-    "appId": "com.csgo-highlights.ui",
-    "productName": "CS:GO Highlights",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "main/**/*",
-      "dist/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "../src",
-        "to": "cli/src",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "../package.json",
-        "to": "cli/package.json"
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+    "vite": "^8.3.5"
   }
 }

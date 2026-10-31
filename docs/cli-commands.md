@@ -1,6 +1,34 @@
 # CLI Commands
 
-The CLI is available at `node src/index.js <command> [options]`. The Electron UI wraps these commands with a graphical interface, but they can also be used directly.
+The CLI is available at `node src/index.js <command> [options]`. The optional web UI (`ui` below) runs these same commands from a browser, but they can also be used directly.
+
+## Web UI
+
+### `ui`
+
+Starts a local web server for running commands and flows from a browser on the same machine.
+
+```bash
+npm run build                # once, and after pulling UI changes: builds ui/dist
+node src/index.js ui [--port <n>]
+```
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `--port <n>` | No | `4280` | Port to listen on |
+| `--dev` | No | - | Development mode used by `npm run dev`: trusts the Vite dev server origin (`http://localhost:5173`) and skips the `ui/dist` check |
+
+The server listens on `127.0.0.1` only and prints a one-time sign-in URL:
+
+```
+UI running at http://127.0.0.1:4280/session?token=...
+```
+
+Open that URL in your browser. It sets a session cookie, and every API and media request requires that cookie, so other websites you visit can't control the server. A new token is generated on every start. Jobs keep running if you close or reload the tab. Press Ctrl+C to stop the server and any running job; the process then exits with code 0.
+
+The command exits with code 1 if `ui/dist` hasn't been built or the port is already in use.
+
+Global Config settings from the UI are stored in `./temp/ui-config.json`.
 
 ## Pipeline Commands
 

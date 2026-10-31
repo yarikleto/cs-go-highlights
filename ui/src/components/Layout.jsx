@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Box } from '@mui/material';
+import { Alert, Box } from '@mui/material';
 import AppBackdrop from './shell/AppBackdrop';
 import TitleBar from './shell/TitleBar';
 import Sidebar from './shell/Sidebar';
 import { useCommandContext } from '../context/CommandContext';
+import { api } from '../lib/api/client';
 
 function Layout({ children }) {
   const [commands, setCommands] = useState([]);
   const [flows, setFlows] = useState([]);
+  const [isSessionExpired, setIsSessionExpired] = useState(false);
   const { runningCommand } = useCommandContext();
 
+  useEffect(() => api.onSessionExpired(() => setIsSessionExpired(true)), []);
+
   useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.getCommands().then(setCommands);
-      window.electronAPI.getFlows().then(setFlows);
-    }
+    api.getCommands().then(setCommands).catch(error => console.error('Failed to load commands:', error));
+    api.getFlows().then(setFlows).catch(error => console.error('Failed to load flows:', error));
   }, []);
 
   const runningLabel = runningCommand
@@ -34,6 +36,12 @@ function Layout({ children }) {
         }}
       >
         <TitleBar runningLabel={runningLabel} />
+        {isSessionExpired && (
+          <Alert severity="warning" square sx={{ flexShrink: 0 }}>
+            Not signed in. The server was restarted or this tab is from an old session: open the URL printed by
+            {' '}<code>csgo-highlights ui</code> in your terminal.
+          </Alert>
+        )}
 
         <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
           <Sidebar commands={commands} flows={flows} />

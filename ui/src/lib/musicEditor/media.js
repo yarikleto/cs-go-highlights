@@ -1,5 +1,3 @@
-const LOCAL_MEDIA_PREFIX = 'local-media://play/';
-
 function detectSeparator(basePath) {
   return String(basePath || '').includes('\\') ? '\\' : '/';
 }
@@ -28,12 +26,5 @@ export function joinLocalPath(basePath, ...segments) {
 
 export function pathToMediaUrl(filePath) {
   if (!filePath) return '';
-
-  const normalizedPath = String(filePath).replace(/\\/g, '/');
-  const encodedPath = normalizedPath
-    .split('/')
-    .map(segment => encodeURIComponent(segment))
-    .join('/');
-
-  return `${LOCAL_MEDIA_PREFIX}${encodedPath}`;
+  return `/media?path=${encodeURIComponent(filePath)}`;
 }

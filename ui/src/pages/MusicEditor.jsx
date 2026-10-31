@@ -24,6 +24,8 @@ import {
 import Timeline from '../components/Timeline';
 import PreviewPlayer from '../components/PreviewPlayer';
 import { joinLocalPath } from '../lib/musicEditor/media';
+import { api } from '../lib/api/client';
+import { useFilePicker } from '../context/FilePickerContext';
 import {
   appendUniqueMusicTracks,
   createMusicTimelineData,
@@ -36,7 +38,10 @@ import {
 } from '../lib/musicEditor/timeline';
 import { MONO_STACK } from '../theme';
 
+const AUDIO_FILTERS = Object.freeze({ name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'] });
+
 export default function MusicEditor() {
+  const { pickPath } = useFilePicker();
   // Data state (causes re-render only when data changes)
   const [clips, setClips] = useState([]);
   const [music, setMusic] = useState([]);
@@ -124,12 +129,12 @@ export default function MusicEditor() {
   // Select clips folder
   const handleSelectClipsFolder = async () => {
     try {
-      const folder = await window.electronAPI.selectFolder();
+      const folder = await pickPath({ mode: 'folder', initialPath: clipsFolder });
       if (!folder) return;
       setLoading(true);
       setError(null);
       setClipsFolder(folder);
-      const scannedClips = await window.electronAPI.scanClips(folder);
+      const scannedClips = await api.scanClips(folder);
       if (scannedClips.length === 0) {
         setError('No video files found in the selected folder');
         setClips([]);
@@ -145,8 +150,9 @@ export default function MusicEditor() {
 
   const handleAddMusic = async () => {
     try {
-      const audioFiles = await window.electronAPI.selectAudioFiles();
-      if (!audioFiles || audioFiles.length === 0) return;
+      const audioPaths = await pickPath({ mode: 'files', filters: AUDIO_FILTERS });
+      if (!audioPaths || audioPaths.length === 0) return;
+      const audioFiles = await api.describeAudioFiles(audioPaths);
       setMusic(prev => appendUniqueMusicTracks(prev, audioFiles));
     } catch (e) {
       setError(e.message);
@@ -159,7 +165,7 @@ export default function MusicEditor() {
 
   const handleSave = async () => {
     try {
-      const result = await window.electronAPI.selectFolder();
+      const result = await pickPath({ mode: 'folder', initialPath: clipsFolder });
       if (!result) return;
       const outputPath = joinLocalPath(result, 'music-timeline.json');
       const data = createMusicTimelineData({
@@ -169,7 +175,7 @@ export default function MusicEditor() {
         totalMusicDuration,
         createdAt: new Date().toISOString(),
       });
-      await window.electronAPI.saveMusicTimeline(outputPath, data);
+      await api.saveMusicTimeline(outputPath, data);
       setSavedPath(outputPath);
     } catch (e) {
       setError(e.message);
@@ -178,10 +184,10 @@ export default function MusicEditor() {
 
   const handleLoad = async () => {
     try {
-      const file = await window.electronAPI.selectFile({ name: 'JSON', extensions: ['json'] });
+      const file = await pickPath({ mode: 'file', filters: { name: 'JSON', extensions: ['json'] }, initialPath: clipsFolder });
       if (!file) return;
       setLoading(true);
-      const data = await window.electronAPI.loadMusicTimeline(file);
+      const data = await api.loadMusicTimeline(file);
       if (data.version !== 1) throw new Error('Unsupported timeline version');
       if (data.clipsFolder) {
         setClipsFolder(data.clipsFolder);
