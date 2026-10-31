@@ -1,16 +1,16 @@
 /**
  * @fileoverview Game client selection for recording.
  *
- * Recording launches a real CS:GO client through HLAE, so the user decides
- * which one (see GAME_CLIENTS in src/config.js):
+ * Recording launches a real CS:GO client through HLAE (see GAME_CLIENTS in
+ * src/config.js):
  *
  *   - legacy:     CS2 (app 730) with the `csgo_legacy` beta branch
  *   - standalone: Counter-Strike: Global Offensive (app 4465480)
  *
- * The install folder comes from `--csgo`, or is located through the Steam
- * library manifests (steamapps/appmanifest_<appId>.acf), so the user does not
- * need to know where Steam put each app. The folder is then verified to really
- * be the selected client before anything is launched.
+ * The install folder comes from `--csgo`, and the client is read from its
+ * csgo/steam.inf. Without `--csgo`, the folder is located through the Steam
+ * library manifests (steamapps/appmanifest_<appId>.acf). The folder is then
+ * verified to really be that client before anything is launched.
  */
 
 import fs from 'node:fs';
@@ -135,40 +135,81 @@ export function readAppManifest(libraryPath, appId) {
 }
 
 /**
- * Decide which folder to launch for the selected client.
+ * Pick the client and the folder to launch. An explicit folder (`--csgo`) decides
+ * the client through the appID in its csgo/steam.inf, so a game copied outside
+ * Steam (e.g. on a VPS) works without `--client`. Without a folder, the Steam
+ * libraries are searched for the requested client, or for any supported one.
  *
  * @param {Object} args
- * @param {Object} args.client Entry of GAME_CLIENTS.
- * @param {string} [args.csgoPath] Explicit folder from `--csgo` (wins if given).
+ * @param {string} [args.clientId] Optional `--client`; narrows the search or overrides detection.
+ * @param {string} [args.csgoPath] Optional `--csgo` install folder (contains csgo.exe).
  * @param {string} args.steamRoot Steam install folder used to find libraries.
- * @param {string} [args.fallbackPath] Folder to try when Steam has no manifest.
- * @returns {{ installPath: string, source: 'option'|'steam'|'fallback', manifest: ReturnType<typeof readAppManifest> }}
+ * @returns {{ client: Object, installPath: string, source: 'option'|'steam', manifest: ReturnType<typeof readAppManifest> }}
  */
-export function resolveClientInstall({ client, csgoPath, steamRoot, fallbackPath }) {
+export function resolveGameInstall({ clientId, csgoPath, steamRoot }) {
+  const requestedClient = clientId ? resolveGameClient(clientId) : null;
   const libraries = findSteamLibraries(steamRoot);
-  const manifests = libraries
-    .map(lib => readAppManifest(lib, client.appId))
-    .filter(Boolean);
 
   if (csgoPath) {
     const installPath = path.resolve(csgoPath);
-    const manifest = manifests.find(m => samePath(m.installPath, installPath)) ?? null;
-    return { installPath, source: 'option', manifest };
+    const client = requestedClient ?? detectClientInFolder(installPath);
+    const manifest = findManifests(libraries, client).find(m => samePath(m.installPath, installPath)) ?? null;
+    return { client, installPath, source: 'option', manifest };
   }
 
-  const installed = manifests.find(m => fs.existsSync(m.installPath));
-  if (installed) {
-    return { installPath: installed.installPath, source: 'steam', manifest: installed };
+  const candidates = requestedClient ? [requestedClient] : Object.values(GAME_CLIENTS);
+  const found = candidates
+    .map(client => ({ client, manifest: findManifests(libraries, client).find(m => fs.existsSync(m.installPath)) }))
+    .filter(({ manifest }) => manifest);
+  const installed = preferUsableInstalls(found);
+
+  if (installed.length > 1) {
+    const found = installed.map(({ client, manifest }) => `${client.label} in ${manifest.installPath}`).join('; ');
+    throw new Error(`Both CS:GO clients are installed (${found}). Choose one with --csgo <folder> or --client <id>.`);
   }
 
-  if (fallbackPath && fs.existsSync(fallbackPath)) {
-    return { installPath: path.resolve(fallbackPath), source: 'fallback', manifest: null };
+  if (installed.length === 0) {
+    const what = requestedClient ? requestedClient.label : 'a CS:GO client';
+    throw new Error(
+      `Could not find ${what} in your Steam libraries (${libraries.join(', ')}). ` +
+      'Pass --csgo <folder> with the game\'s install folder (the one that contains csgo.exe).'
+    );
   }
 
-  throw new Error(
-    `Could not find ${client.label} in your Steam libraries (${libraries.join(', ')}). ` +
-    'Install it in Steam, or set the CS:GO folder (--csgo) to its install folder.'
-  );
+  const [{ client, manifest }] = installed;
+  return { client, installPath: manifest.installPath, source: 'steam', manifest };
+}
+
+/**
+ * Most players keep plain CS2 (app 730 without the csgo_legacy beta) installed next to
+ * standalone CS:GO; only installs that pass verification count when choosing. If none
+ * pass, all are kept so verification can explain what is wrong with them.
+ */
+function preferUsableInstalls(installs) {
+  const usable = installs.filter(({ client, manifest }) => (
+    verifyClientInstall({ client, installPath: manifest.installPath, manifest }).problems.length === 0
+  ));
+  return usable.length > 0 ? usable : installs;
+}
+
+function findManifests(libraries, client) {
+  return libraries.map(library => readAppManifest(library, client.appId)).filter(Boolean);
+}
+
+function detectClientInFolder(installPath) {
+  const { appId } = readSteamInf(installPath);
+  const choices = Object.values(GAME_CLIENTS).map(c => `--client ${c.id}`).join(' or ');
+
+  if (appId === null) {
+    throw new Error(`Cannot tell which CS:GO client is in ${installPath}: its csgo/steam.inf has no appID. Pass ${choices}.`);
+  }
+
+  const client = Object.values(GAME_CLIENTS).find(c => c.appId === appId);
+  if (!client) {
+    const supported = Object.values(GAME_CLIENTS).map(c => `${c.id} = ${c.appId}`).join(', ');
+    throw new Error(`${installPath} contains appID ${appId}, which is not a supported client (${supported}).`);
+  }
+  return client;
 }
 
 /**

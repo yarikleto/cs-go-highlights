@@ -125,12 +125,16 @@ function CommandField({
   }
 
   if (field.type === 'select') {
+    const hasEmptyChoice = field.choices?.some((choice) => choice.value === '') ?? false;
+
     return (
       <FormControl fullWidth required={field.required}>
-        <InputLabel>{label}</InputLabel>
+        <InputLabel shrink={hasEmptyChoice || undefined}>{label}</InputLabel>
         <Select
           value={fieldValue}
           label={label}
+          displayEmpty={hasEmptyChoice}
+          notched={hasEmptyChoice || undefined}
           onChange={(e) => onChange(field.name, e.target.value)}
         >
           {field.choices?.map((choice) => (

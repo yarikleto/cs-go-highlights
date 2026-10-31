@@ -189,10 +189,20 @@
         "default": "C:\\Program Files (x86)\\HLAE\\hlae.exe"
       },
       {
+        "name": "csgo",
+        "label": "Game Folder",
+        "type": "folder",
+        "description": "Install folder of the game (contains csgo.exe). The client is detected from its csgo/steam.inf. Leave empty to search your Steam libraries"
+      },
+      {
         "name": "client",
         "label": "Game Client",
         "type": "select",
         "choices": [
+          {
+            "value": "",
+            "label": "Detect automatically"
+          },
           {
             "value": "legacy",
             "label": "CS2 (app 730) with csgo_legacy beta"
@@ -202,21 +212,15 @@
             "label": "CS:GO standalone (app 4465480)"
           }
         ],
-        "default": "legacy",
-        "description": "Which installed CS:GO client HLAE launches to record the clips"
-      },
-      {
-        "name": "csgo",
-        "label": "CS:GO Folder",
-        "type": "folder",
-        "description": "Install folder of the selected client (contains csgo.exe). Leave empty to find it in your Steam libraries"
+        "default": "",
+        "description": "Usually not needed. Forces a client when Game Folder's steam.inf has no appID, or picks one when both are installed in Steam"
       },
       {
         "name": "steam",
         "label": "Steam Folder",
         "type": "folder",
         "default": "C:\\Program Files (x86)\\Steam",
-        "description": "Used to find the selected client when CS:GO Folder is empty"
+        "description": "Used to search for the game when Game Folder is empty"
       },
       {
         "name": "output",

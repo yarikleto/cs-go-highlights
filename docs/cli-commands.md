@@ -125,9 +125,9 @@ node src/index.js record [options]
 | `--highlights <path>` | No | `./temp/output/highlights.json` | Path to `highlights.json` file |
 | `--demos <path>` | No | `./temp/demos` | Path to folder containing `.dem` files |
 | `--hlae <path>` | No | `C:\Program Files (x86)\HLAE\hlae.exe` | Path to HLAE executable |
-| `--client <id>` | No | `legacy` | Game client HLAE launches: `legacy` = CS2 (app 730) with the `csgo_legacy` beta, `standalone` = CS:GO (app 4465480) |
-| `--csgo <path>` | No | found via Steam | Install folder of the selected client (contains `csgo.exe`). When empty, it is found from `steamapps/appmanifest_<appId>.acf` in your Steam libraries |
-| `--steam <path>` | No | `C:\Program Files (x86)\Steam` | Steam folder used to find the selected client |
+| `--csgo <path>` | No | found via Steam | Game install folder (contains `csgo.exe`). The client is detected from the `appID` in its `csgo/steam.inf`. When empty, the game is searched for in your Steam libraries |
+| `--client <id>` | No | detected | Force a client: `legacy` = CS2 (app 730) with the `csgo_legacy` beta, `standalone` = CS:GO (app 4465480). Only needed when `steam.inf` has no `appID`, or when both clients are installed in Steam and `--csgo` is not given |
+| `--steam <path>` | No | `C:\Program Files (x86)\Steam` | Steam folder used to search for the game when `--csgo` is empty |
 | `--output <path>` | No | `./temp/output` | Output folder for clips |
 | `--quality <preset>` | No | `medium` | Encoding quality preset |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
@@ -141,7 +141,13 @@ node src/index.js record [options]
 
 #### Game client
 
-Recording runs a real game client, so you choose which one with `--client` (UI: **Game Client**). Before launching anything, `record` verifies that the folder really is that client: `csgo.exe` exists, `csgo/steam.inf` has the matching `appID`, and, for `legacy`, Steam has the `csgo_legacy` beta mounted.
+Recording runs a real game client. `record` decides which one and where it is installed like this:
+
+1. **`--csgo <folder>` given** (UI: **Game Folder**): the client is read from the `appID` in `<folder>/csgo/steam.inf` (`730` → `legacy`, `4465480` → `standalone`). This works for a game copied outside Steam, e.g. on a VPS. If `steam.inf` has no `appID`, `record` stops and asks for `--client`.
+2. **No `--csgo`**: the Steam libraries (`steamapps/libraryfolders.vdf` and `appmanifest_<appId>.acf` under `--steam`) are searched for both clients. An install that fails verification (for example plain CS2 without the `csgo_legacy` beta) is skipped when a usable one exists. If exactly one usable client is found, it is used. If both are, `record` stops and asks for `--csgo` or `--client`. If none is found, it asks for `--csgo`.
+3. **`--client <id>`** overrides detection, or narrows the Steam search to that client.
+
+Before launching anything, `record` verifies that the folder really is that client: `csgo.exe` exists, `csgo/steam.inf` has the matching `appID`, and, for `legacy` installed through Steam, the `csgo_legacy` beta is mounted (skipped when there is no Steam manifest).
 
 #### Game version compatibility
 

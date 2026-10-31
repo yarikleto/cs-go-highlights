@@ -39,7 +39,6 @@ export const PATHS = Object.freeze({
   musicMapping: `${OUTPUT_DIR}/music-mapping.json`,
   // External tools (Windows default paths)
   hlae: 'C:\\Program Files (x86)\\HLAE\\hlae.exe',
-  csgo: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive',
   // Steam root, used to locate game installs via steamapps/libraryfolders.vdf
   steam: 'C:\\Program Files (x86)\\Steam',
 });
@@ -57,9 +56,9 @@ export const TOP_COMMAND = Object.freeze({
 // =============================================================================
 
 /**
- * CS:GO game clients HLAE can launch for recording. The user picks one with
- * `record --client <id>`; its install folder is taken from `--csgo` or located
- * through the Steam library manifests (steamapps/appmanifest_<appId>.acf).
+ * CS:GO game clients HLAE can launch for recording. `record` detects the client
+ * from the appID in `--csgo`'s csgo/steam.inf, or searches the Steam library
+ * manifests (steamapps/appmanifest_<appId>.acf); `--client <id>` overrides it.
  *
  * - appId: Steam app ID, also written as `appID` in <install>/csgo/steam.inf.
  * - betaKey: Steam beta branch that must be selected for this app (or null).
@@ -78,9 +77,6 @@ export const GAME_CLIENTS = Object.freeze({
     label: 'CS:GO standalone (app 4465480)',
   }),
 });
-
-/** Client used by `record` when `--client` is not given. */
-export const DEFAULT_GAME_CLIENT = 'legacy';
 
 /**
  * Optional version pins for demo compatibility. All `null` by default.

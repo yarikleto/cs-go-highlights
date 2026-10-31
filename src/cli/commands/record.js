@@ -10,8 +10,8 @@ import fs from 'fs';
 import { recordAllHighlights } from '../../recorder.js';
 import { cleanupTempFiles } from '../../merger.js';
 import { validateFileExists, validateDirExists, ensureDir, parseJsonFile, getHighlights } from '../validators.js';
-import { RECORDING_QUALITY, GAME_VERSION, DEFAULT_GAME_CLIENT, PATHS } from '../../config.js';
-import { resolveGameClient, resolveClientInstall, verifyClientInstall } from '../services/gameClients.js';
+import { RECORDING_QUALITY, GAME_VERSION, PATHS } from '../../config.js';
+import { resolveGameInstall, verifyClientInstall } from '../services/gameClients.js';
 import {
   readDemoHeader,
   assertVersionCompatibility,
@@ -156,22 +156,20 @@ async function recordCommand(options) {
 }
 
 /**
- * Resolve the game client the user chose (--client) to a verified install
- * folder (--csgo, or located via Steam). Exits on any problem: launching the
- * wrong game would only fail later inside HLAE with a far less clear error.
+ * Resolve the game folder (--csgo, or located via Steam) and its client
+ * (detected from the folder, or --client) to a verified install. Exits on any
+ * problem: launching the wrong game would only fail later inside HLAE with a
+ * far less clear error.
  *
  * @param {Object} options - Command options
  * @returns {{ client: Object, csgoPath: string }}
  */
 function selectGameClient(options) {
   try {
-    const client = resolveGameClient(options.client || DEFAULT_GAME_CLIENT);
-    const { installPath, source, manifest } = resolveClientInstall({
-      client,
+    const { client, installPath, source, manifest } = resolveGameInstall({
+      clientId: options.client,
       csgoPath: options.csgo,
       steamRoot: options.steam || PATHS.steam,
-      // Pre-existing default folder of the CS2 csgo_legacy install
-      fallbackPath: client.id === 'legacy' ? PATHS.csgo : undefined,
     });
 
     const { problems, warnings } = verifyClientInstall({ client, installPath, manifest });
@@ -181,7 +179,7 @@ function selectGameClient(options) {
       process.exit(1);
     }
 
-    const how = { option: 'from --csgo', steam: 'found in Steam library', fallback: 'default folder' }[source];
+    const how = { option: 'from --csgo', steam: 'found in Steam library' }[source];
     console.log(`Game client: ${client.label} — ${installPath} (${how})`);
     return { client, csgoPath: installPath };
   } catch (err) {

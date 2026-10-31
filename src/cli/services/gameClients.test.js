@@ -8,7 +8,7 @@ import {
   resolveGameClient,
   findSteamLibraries,
   readAppManifest,
-  resolveClientInstall,
+  resolveGameInstall,
   verifyClientInstall,
 } from './gameClients.js';
 
@@ -70,47 +70,163 @@ test('findSteamLibraries includes the Steam root and libraryfolders.vdf entries'
   });
 });
 
-test('resolveClientInstall finds the standalone client in a secondary library', () => {
-  withTempDir(dir => {
-    const steamRoot = path.join(dir, 'Steam');
-    const second = path.join(dir, 'Library2');
-    installApp(steamRoot, { appId: 730, installDir: 'Counter-Strike Global Offensive', betaKey: 'csgo_legacy' });
-    const standalonePath = installApp(second, { appId: 4465480, installDir: 'CSGO Standalone' });
-    fs.writeFileSync(
-      path.join(steamRoot, 'steamapps', 'libraryfolders.vdf'),
-      `"libraryfolders" { "0" { "path" "${steamRoot.replace(/\\/g, '\\\\')}" } "1" { "path" "${second.replace(/\\/g, '\\\\')}" } }`,
-    );
+function writeLibraryFolders(steamRoot, libraries) {
+  const entries = libraries
+    .map((library, index) => `"${index}" { "path" "${library.replace(/\\/g, '\\\\')}" }`)
+    .join(' ');
+  fs.mkdirSync(path.join(steamRoot, 'steamapps'), { recursive: true });
+  fs.writeFileSync(path.join(steamRoot, 'steamapps', 'libraryfolders.vdf'), `"libraryfolders" { ${entries} }`);
+}
 
-    const result = resolveClientInstall({ client: resolveGameClient('standalone'), steamRoot });
-    assert.equal(result.installPath, standalonePath);
-    assert.equal(result.source, 'steam');
-    assert.deepEqual(verifyClientInstall({ client: resolveGameClient('standalone'), ...result }).problems, []);
+/** A game folder copied outside any Steam library, as on a VPS without Steam. */
+function copyGameFolder(dir, { appIdLine }) {
+  const installPath = path.join(dir, 'games', 'my csgo');
+  fs.mkdirSync(path.join(installPath, 'csgo'), { recursive: true });
+  fs.writeFileSync(path.join(installPath, 'csgo.exe'), '');
+  fs.writeFileSync(path.join(installPath, 'csgo', 'steam.inf'), `ClientVersion=2000700\nServerVersion=2000700\nPatchVersion=1.38.8.1\n${appIdLine}`);
+  return installPath;
+}
+
+test('resolveGameInstall detects the client from a game folder outside Steam', () => {
+  withTempDir(dir => {
+    const installPath = copyGameFolder(dir, { appIdLine: 'appID=4465480\n' });
+
+    const result = resolveGameInstall({ csgoPath: installPath, steamRoot: path.join(dir, 'NoSteam') });
+
+    assert.equal(result.client.id, 'standalone');
+    assert.equal(result.installPath, installPath);
+    assert.equal(result.source, 'option');
+    assert.equal(result.manifest, null);
   });
 });
 
-test('resolveClientInstall prefers an explicit --csgo folder and attaches its manifest', () => {
+test('resolveGameInstall attaches the Steam manifest of an explicit folder', () => {
   withTempDir(dir => {
     const steamRoot = path.join(dir, 'Steam');
     const legacyPath = installApp(steamRoot, { appId: 730, installDir: 'CSGO', betaKey: 'csgo_legacy' });
-    const result = resolveClientInstall({ client: resolveGameClient('legacy'), csgoPath: legacyPath, steamRoot });
-    assert.equal(result.source, 'option');
+
+    const result = resolveGameInstall({ csgoPath: legacyPath, steamRoot });
+
+    assert.equal(result.client.id, 'legacy');
     assert.equal(result.manifest.betaKey, 'csgo_legacy');
   });
 });
 
-test('resolveClientInstall explains when the selected client is not installed', () => {
+test('resolveGameInstall keeps an explicitly requested client for an explicit folder', () => {
+  withTempDir(dir => {
+    const installPath = copyGameFolder(dir, { appIdLine: 'appID=730\n' });
+
+    const result = resolveGameInstall({ clientId: 'standalone', csgoPath: installPath, steamRoot: path.join(dir, 'NoSteam') });
+
+    assert.equal(result.client.id, 'standalone');
+    assert.match(verifyClientInstall(result).problems.join('\n'), /selected CS:GO standalone.*contains CS2/);
+  });
+});
+
+test('resolveGameInstall asks for --client when steam.inf has no appID', () => {
+  withTempDir(dir => {
+    const installPath = copyGameFolder(dir, { appIdLine: '' });
+    assert.throws(
+      () => resolveGameInstall({ csgoPath: installPath, steamRoot: path.join(dir, 'NoSteam') }),
+      /Cannot tell which CS:GO client.*no appID.*--client legacy.*--client standalone/,
+    );
+  });
+});
+
+test('resolveGameInstall rejects a folder with an unsupported appID', () => {
+  withTempDir(dir => {
+    const installPath = copyGameFolder(dir, { appIdLine: 'appID=999\n' });
+    assert.throws(
+      () => resolveGameInstall({ csgoPath: installPath, steamRoot: path.join(dir, 'NoSteam') }),
+      /appID 999.*not a supported client/,
+    );
+  });
+});
+
+test('resolveGameInstall finds the only installed client in the Steam libraries', () => {
+  withTempDir(dir => {
+    const steamRoot = path.join(dir, 'Steam');
+    const second = path.join(dir, 'Library2');
+    const standalonePath = installApp(second, { appId: 4465480, installDir: 'CSGO Standalone' });
+    writeLibraryFolders(steamRoot, [steamRoot, second]);
+
+    const result = resolveGameInstall({ steamRoot });
+
+    assert.equal(result.client.id, 'standalone');
+    assert.equal(result.installPath, standalonePath);
+    assert.equal(result.source, 'steam');
+    assert.deepEqual(verifyClientInstall(result).problems, []);
+  });
+});
+
+test('resolveGameInstall asks to choose when both clients are installed', () => {
+  withTempDir(dir => {
+    const steamRoot = path.join(dir, 'Steam');
+    installApp(steamRoot, { appId: 730, installDir: 'Counter-Strike Global Offensive', betaKey: 'csgo_legacy' });
+    installApp(steamRoot, { appId: 4465480, installDir: 'CSGO Standalone' });
+
+    assert.throws(() => resolveGameInstall({ steamRoot }), /Both .* are installed.*--csgo.*--client/s);
+  });
+});
+
+test('resolveGameInstall prefers standalone when CS2 is installed without the csgo_legacy beta', () => {
+  withTempDir(dir => {
+    const steamRoot = path.join(dir, 'Steam');
+    installApp(steamRoot, { appId: 730, installDir: 'Counter-Strike Global Offensive' });
+    const standalonePath = installApp(steamRoot, { appId: 4465480, installDir: 'CSGO Standalone' });
+
+    const result = resolveGameInstall({ steamRoot });
+
+    assert.equal(result.client.id, 'standalone');
+    assert.equal(result.installPath, standalonePath);
+  });
+});
+
+test('resolveGameInstall still returns an unusable install when it is the only one, so verification can explain it', () => {
+  withTempDir(dir => {
+    const steamRoot = path.join(dir, 'Steam');
+    installApp(steamRoot, { appId: 730, installDir: 'Counter-Strike Global Offensive' });
+
+    const result = resolveGameInstall({ steamRoot });
+
+    assert.equal(result.client.id, 'legacy');
+    assert.match(verifyClientInstall(result).problems.join('\n'), /expected "csgo_legacy"/);
+  });
+});
+
+test('resolveGameInstall uses the requested client when both are installed', () => {
+  withTempDir(dir => {
+    const steamRoot = path.join(dir, 'Steam');
+    const legacyPath = installApp(steamRoot, { appId: 730, installDir: 'Counter-Strike Global Offensive', betaKey: 'csgo_legacy' });
+    installApp(steamRoot, { appId: 4465480, installDir: 'CSGO Standalone' });
+
+    const result = resolveGameInstall({ clientId: 'legacy', steamRoot });
+
+    assert.equal(result.installPath, legacyPath);
+  });
+});
+
+test('resolveGameInstall asks for --csgo when no client is found in Steam', () => {
   withTempDir(dir => {
     assert.throws(
-      () => resolveClientInstall({ client: resolveGameClient('standalone'), steamRoot: path.join(dir, 'Steam') }),
+      () => resolveGameInstall({ steamRoot: path.join(dir, 'Steam') }),
+      /Could not find a CS:GO client in your Steam libraries.*--csgo/,
+    );
+  });
+});
+
+test('resolveGameInstall names the requested client when it is not installed', () => {
+  withTempDir(dir => {
+    assert.throws(
+      () => resolveGameInstall({ clientId: 'standalone', steamRoot: path.join(dir, 'Steam') }),
       /Could not find CS:GO standalone \(app 4465480\).*--csgo/,
     );
   });
 });
 
-test('resolveClientInstall falls back to the default folder when Steam has no manifest', () => {
+test('resolveGameInstall rejects an unknown client id', () => {
   withTempDir(dir => {
-    const result = resolveClientInstall({ client: resolveGameClient('legacy'), steamRoot: path.join(dir, 'Steam'), fallbackPath: dir });
-    assert.equal(result.source, 'fallback');
+    assert.throws(() => resolveGameInstall({ clientId: 'cs2', steamRoot: dir }), /Unknown game client "cs2"/);
   });
 });
 
