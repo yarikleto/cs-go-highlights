@@ -37,7 +37,6 @@ async function startServer(t, { jobRunner = createFakeJobRunner() } = {}) {
     jobRunner,
     commands: [{ id: 'top', name: 'Top' }],
     flows: [{ id: 'full', steps: [] }],
-    configPath: path.join(root, 'temp', 'ui-config.json'),
     projectRoot: root,
     probeDuration: async () => 7,
   });
@@ -223,23 +222,6 @@ test('events stream starts with job-state then replays the snapshot', async (t) 
     'event: job-state\ndata: {"kind":"command","id":"top"}\n\n'
       + 'event: command-output\ndata: {"type":"stdout","text":"hi"}\n\n',
   );
-});
-
-test('config route saves and loads the config', async (t) => {
-  const { port } = await startServer(t);
-  const config = { paths: { demos: './x' } };
-
-  const saved = await request(port, { method: 'PUT', path: '/api/config', headers: { Cookie: SESSION }, body: config });
-  const loaded = await request(port, { path: '/api/config', headers: { Cookie: SESSION } });
-
-  assert.deepEqual(json(saved), { success: true });
-  assert.deepEqual(json(loaded), config);
-});
-
-test('config route rejects a non-object body', async (t) => {
-  const { port } = await startServer(t);
-  const response = await request(port, { method: 'PUT', path: '/api/config', headers: { Cookie: SESSION }, body: [1] });
-  assert.equal(response.status, 400);
 });
 
 test('text file route returns 404 for a missing file', async (t) => {

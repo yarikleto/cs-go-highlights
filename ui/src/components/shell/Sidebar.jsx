@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Box, ButtonBase, Collapse, Typography } from '@mui/material';
 import {
   Home as HomeIcon,
-  Settings as SettingsIcon,
   ExpandMore,
   PlayArrow as PlayIcon,
   Build as BuildIcon,
@@ -198,14 +197,6 @@ function Sidebar({ commands, flows }) {
         </Collapse>
       </Box>
 
-      <Box sx={{ px: 1.25, py: 1.25, borderTop: `1px solid ${tokens.hairline}` }}>
-        <NavItem
-          icon={SettingsIcon}
-          label="Global Config"
-          active={isActive('/config')}
-          onClick={() => navigate('/config')}
-        />
-      </Box>
     </Box>
   );
 }

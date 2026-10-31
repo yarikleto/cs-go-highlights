@@ -28,8 +28,6 @@ Open that URL in your browser. It sets a session cookie, and every API and media
 
 The command exits with code 1 if `ui/dist` hasn't been built or the port is already in use.
 
-Global Config settings from the UI are stored in `./temp/ui-config.json`.
-
 ## Pipeline Commands
 
 ### `analyze`

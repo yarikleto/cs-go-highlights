@@ -63,27 +63,14 @@ test('stopCommand and stopFlow return whether something was stopped', async () =
   assert.deepEqual(calls.map(call => [call.method, call.url]), [['POST', '/api/jobs/stop'], ['POST', '/api/jobs/stop']]);
 });
 
-test('getConfig throws the server error message', async () => {
+test('requests with an error body throw the server message', async () => {
   const { api } = createHarness(jsonResponse(500, { error: 'boom' }));
-  await assert.rejects(api.getConfig(), /boom/);
+  await assert.rejects(api.getCommands(), /boom/);
 });
 
 test('requests without an error body report the status', async () => {
   const { api } = createHarness({ ok: false, status: 502, json: async () => { throw new Error('not json'); } });
   await assert.rejects(api.getCommands(), /Request failed \(502\)/);
-});
-
-test('saveConfig reports failures as a result instead of throwing', async () => {
-  const { api } = createHarness(jsonResponse(400, { error: 'config must be an object' }));
-  assert.deepEqual(await api.saveConfig([]), { success: false, error: 'config must be an object' });
-});
-
-test('saveConfig sends a PUT', async () => {
-  const { api, calls } = createHarness(jsonResponse(200, { success: true }));
-
-  assert.deepEqual(await api.saveConfig({ a: 1 }), { success: true });
-  assert.equal(calls[0].method, 'PUT');
-  assert.equal(calls[0].url, '/api/config');
 });
 
 test('readFile encodes the path query and returns text', async () => {

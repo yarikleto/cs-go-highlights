@@ -12,7 +12,6 @@ import { CONTENT_SECURITY_POLICY, SESSION_COOKIE } from './constants.js';
 import { sendJson, sendText } from './http.js';
 import { createRouter } from './router.js';
 import { catalogRoutes } from './routes/catalogRoutes.js';
-import { configRoutes } from './routes/configRoutes.js';
 import { eventRoutes } from './routes/eventRoutes.js';
 import { fileRoutes } from './routes/fileRoutes.js';
 import { jobRoutes } from './routes/jobRoutes.js';
@@ -34,7 +33,6 @@ export function createUiServer({
   jobRunner,
   commands,
   flows,
-  configPath,
   projectRoot,
   probeDuration,
 }) {
@@ -42,7 +40,6 @@ export function createUiServer({
     ...catalogRoutes({ commands, flows }),
     ...jobRoutes({ jobRunner, commands, flows }),
     ...eventRoutes({ jobRunner }),
-    ...configRoutes({ configPath }),
     ...fileRoutes({ projectRoot }),
     ...mediaRoutes({ probeDuration }),
     ...musicRoutes({ probeDuration }),

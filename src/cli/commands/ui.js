@@ -1,12 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { PATHS } from '../../config.js';
 import { COMMANDS, FLOWS } from '../../shared/commandsConfig.js';
 import { buildSessionUrl, createSessionToken } from '../../server/auth.js';
 import { DEFAULT_UI_PORT, DEV_SERVER_ORIGIN, UI_HOST } from '../../server/constants.js';
 import { createJobRunner } from '../../server/jobRunner.js';
 import { createUiServer } from '../../server/createUiServer.js';
-import { PROJECT_ROOT, resolveProjectPath } from '../../server/paths.js';
+import { PROJECT_ROOT } from '../../server/paths.js';
 import { probeMediaDurationSeconds } from '../utils/ffmpeg.js';
 
 const MAX_PORT = 65535;
@@ -48,7 +47,6 @@ async function startUi({ port, isDevMode }) {
     jobRunner,
     commands: COMMANDS,
     flows: FLOWS,
-    configPath: resolveProjectPath(PATHS.uiConfig),
     projectRoot: PROJECT_ROOT,
     probeDuration: probeMediaDurationSeconds,
   });

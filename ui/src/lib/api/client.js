@@ -38,14 +38,6 @@ export function createApiClient({ fetchImpl = (...args) => globalThis.fetch(...a
     return stopped;
   }
 
-  async function saveConfig(config) {
-    try {
-      return await sendJson('PUT', '/api/config', config);
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
   const on = name => callback => events.subscribe(name, callback);
 
   return {
@@ -63,8 +55,6 @@ export function createApiClient({ fetchImpl = (...args) => globalThis.fetch(...a
     onFlowComplete: on('flow-complete'),
     onJobState: on('job-state'),
     onSessionExpired,
-    getConfig: () => getJson('/api/config'),
-    saveConfig,
     readFile: async filePath => (await request(withQuery('/api/files/text', { path: filePath }))).text(),
     listDirectory: directoryPath => getJson(withQuery('/api/fs/list', { path: directoryPath })),
     listRoots: () => getJson('/api/fs/roots'),

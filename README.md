@@ -56,10 +56,9 @@ The command prints a sign-in URL such as `http://127.0.0.1:4280/session?token=..
 
 In the UI you can:
 
-1. **Configure paths** — set your demos folder, HLAE location, and CS:GO installation path in the Settings page
-2. **Run workflows** — use the built-in pipelines (e.g., "Full Legacy Pipeline") to analyze demos, record clips, apply effects, and merge into a final video
-3. **Browse highlights** — preview detected highlights, sort by map/score, and manage your clips
-4. **Fine-tune music** — adjust music timing per clip in the Music Editor
+1. **Run workflows** — use the built-in pipelines (e.g., "Full Legacy Pipeline") to analyze demos, record clips, apply effects, and merge into a final video
+2. **Browse highlights** — preview detected highlights, sort by map/score, and manage your clips
+3. **Fine-tune music** — adjust music timing per clip in the Music Editor
 
 ## Typical Workflow
 
