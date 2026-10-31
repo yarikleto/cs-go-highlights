@@ -42,7 +42,33 @@ function formatHlaeDiagnostics(result) {
     lines.push('HLAE produced no captured launcher output; inspect the in-game console.');
   }
 
+  lines.push(...formatGameLogDiagnostics(result.logs));
+
   return lines.join('\n');
+}
+
+/**
+ * Describe the saved game console / HLAE logs of a run (see gameConsoleLog.js).
+ */
+function formatGameLogDiagnostics(logs) {
+  if (!logs) return [];
+  if (logs.error) return [`Could not save game logs: ${logs.error}`];
+
+  const lines = [];
+  if (logs.consoleLogPath) lines.push(`Game console log: ${logs.consoleLogPath}`);
+  if (logs.hlaeLogPath) lines.push(`HLAE log: ${logs.hlaeLogPath}`);
+
+  const indent = (l) => `  ${l}`;
+  if (!logs.consoleCaptured) {
+    lines.push('The game wrote no console output (it may not have started, or was launched without -condebug).');
+  } else if (logs.problemLines?.length > 0) {
+    lines.push('Game console problems:');
+    lines.push(...logs.problemLines.map(indent));
+  } else if (logs.tailLines?.length > 0) {
+    lines.push('Game console (tail):');
+    lines.push(...logs.tailLines.map(indent));
+  }
+  return lines;
 }
 
 function describeEntries(entries) {

@@ -99,13 +99,32 @@ node src/index.js record [options]
 | `--highlights <path>` | No | `./output/highlights.json` | Path to `highlights.json` file |
 | `--demos <path>` | No | `./demos` | Path to folder containing `.dem` files |
 | `--hlae <path>` | No | `C:\Program Files (x86)\HLAE\hlae.exe` | Path to HLAE executable |
-| `--csgo <path>` | No | `C:\Program Files (x86)\Steam\...` | Path to CS:GO installation folder |
+| `--client <id>` | No | `legacy` | Game client HLAE launches: `legacy` = CS2 (app 730) with the `csgo_legacy` beta, `standalone` = CS:GO (app 4465480) |
+| `--csgo <path>` | No | found via Steam | Install folder of the selected client (contains `csgo.exe`). When empty, it is found from `steamapps/appmanifest_<appId>.acf` in your Steam libraries |
+| `--steam <path>` | No | `C:\Program Files (x86)\Steam` | Steam folder used to find the selected client |
 | `--output <path>` | No | `./output` | Output folder for clips |
 | `--quality <preset>` | No | `medium` | Encoding quality preset |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID |
 | `--hud` | No | - | Record with HUD, chat, voice |
 | `--voice` | No | - | Record with voice but without HUD (double-pass) |
+| `--client-version <n>` | No | - | Pin `steam.inf` ClientVersion (abort if Steam updated the game) |
+| `--server-version <n>` | No | - | Pin `steam.inf` ServerVersion |
+| `--network-protocol <n>` | No | from `steam.inf` | Override the protocol every demo must match |
+| `--skip-version-check` | No | - | Skip the demo vs. game compatibility check |
+
+#### Game client
+
+Recording runs a real game client, so you choose which one with `--client` (UI: **Game Client**). Before launching anything, `record` verifies that the folder really is that client: `csgo.exe` exists, `csgo/steam.inf` has the matching `appID`, and, for `legacy`, Steam has the `csgo_legacy` beta mounted.
+
+#### Game version compatibility
+
+Before launching HLAE, `record` checks that every demo it is about to record can be played by the selected client:
+
+1. Reads `<csgo>/csgo/steam.inf` and derives the client's network protocol from `PatchVersion` (`1.38.8.1` → `13881`). `appID` identifies the client: `730` = CS2 with the `csgo_legacy` beta, `4465480` = standalone CS:GO.
+2. Reads each demo's header (`networkProtocol`, game directory) and requires it to match the client. CS2 (Source 2) demos and demos from other games are rejected with a clear message.
+
+All problems are reported at once. Demos recorded on either client (730 `csgo_legacy` or 4465480) share the same build (`13881`), so they are interchangeable as long as the installed game is on that build.
 
 #### Quality Presets
 
@@ -115,6 +134,10 @@ node src/index.js record [options]
 | `medium` | 18 | medium | Good quality, balanced speed (default) |
 | `fast` | 20 | fast | Decent quality, fast encoding |
 | `draft` | 23 | ultrafast | Preview quality, very fast |
+
+#### Logs
+
+The game is launched with `-condebug`, so its console is written to `<game>/csgo/console.log`. After every HLAE run, the part written during that run is saved to `<output>/logs/<clip>.console.log` together with `<clip>.hlae.log` (HLAE output). Both start with a header: client, game folder, demo, highlight ID, full HLAE command and exit status. With `--voice` each pass gets its own files (`.pass1-voice`, `.pass2-clean`). When a recording fails, the error shows the log paths and the console lines that look like errors.
 
 **Note about `--hud`**: Enables voice and text chat from both teams, but also shows the full spectator HUD due to CS:GO limitations.
 

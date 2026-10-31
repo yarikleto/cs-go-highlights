@@ -155,7 +155,7 @@
   {
     "id": "record",
     "name": "Record",
-    "description": "Launch CS:GO via HLAE and automatically record each highlight as a video clip. The game is configured for clean recording (minimal HUD, locked camera, no overlays). Requires HLAE and CS:GO Legacy installed.",
+    "description": "Launch CS:GO via HLAE and automatically record each highlight as a video clip. The game is configured for clean recording (minimal HUD, locked camera, no overlays). Requires HLAE and CS:GO installed: either CS2 (app 730) with the csgo_legacy beta, or standalone CS:GO (app 4465480). Each demo is checked against the installed game build before recording.",
     "category": "Pipeline",
     "options": [
       {
@@ -189,10 +189,34 @@
         "default": "C:\\Program Files (x86)\\HLAE\\hlae.exe"
       },
       {
+        "name": "client",
+        "label": "Game Client",
+        "type": "select",
+        "choices": [
+          {
+            "value": "legacy",
+            "label": "CS2 (app 730) with csgo_legacy beta"
+          },
+          {
+            "value": "standalone",
+            "label": "CS:GO standalone (app 4465480)"
+          }
+        ],
+        "default": "legacy",
+        "description": "Which installed CS:GO client HLAE launches to record the clips"
+      },
+      {
         "name": "csgo",
         "label": "CS:GO Folder",
         "type": "folder",
-        "default": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive"
+        "description": "Install folder of the selected client (contains csgo.exe). Leave empty to find it in your Steam libraries"
+      },
+      {
+        "name": "steam",
+        "label": "Steam Folder",
+        "type": "folder",
+        "default": "C:\\Program Files (x86)\\Steam",
+        "description": "Used to find the selected client when CS:GO Folder is empty"
       },
       {
         "name": "output",
@@ -272,28 +296,28 @@
       },
       {
         "name": "client-version",
-        "label": "Expected ClientVersion",
+        "label": "Pin ClientVersion",
         "type": "number",
-        "description": "From steam.inf — Steam build the demos were recorded on"
+        "description": "Optional. Abort if steam.inf ClientVersion differs (e.g. after a Steam auto-update)"
       },
       {
         "name": "server-version",
-        "label": "Expected ServerVersion",
+        "label": "Pin ServerVersion",
         "type": "number",
-        "description": "From steam.inf — must match ClientVersion in practice"
+        "description": "Optional. Abort if steam.inf ServerVersion differs"
       },
       {
         "name": "network-protocol",
-        "label": "Expected Demo NetworkProtocol",
+        "label": "Override Demo NetworkProtocol",
         "type": "number",
-        "description": "From demo header. Leave blank to only verify all demos in the batch agree."
+        "description": "Optional. By default every demo must match the installed client (steam.inf PatchVersion, e.g. 1.38.8.1 = 13881)"
       },
       {
         "name": "skip-version-check",
         "label": "Skip Version Check",
         "type": "boolean",
         "default": false,
-        "description": "Bypass the game/demo version compatibility check (not recommended)"
+        "description": "Bypass the demo vs installed game compatibility check (not recommended)"
       }
     ]
   },

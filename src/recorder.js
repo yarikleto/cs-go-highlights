@@ -15,6 +15,11 @@ import {
 } from './config.js';
 import { getHighlights } from './cli/validators.js';
 import {
+  CONSOLE_LOG_LAUNCH_OPTIONS,
+  startGameConsoleCapture,
+  saveRunLogs,
+} from './gameConsoleLog.js';
+import {
   appendOutputTail,
   formatHlaeDiagnostics,
   inspectRecordingArtifacts,
@@ -25,6 +30,8 @@ const __dirname = dirname(__filename);
 
 // Track active processes for cleanup on SIGINT/SIGTERM
 let activeHlaeProcess = null;
+// Upper bound for the HLAE output kept for the per-run log file
+const MAX_HLAE_LOG_LENGTH = 8 * 1024 * 1024;
 let activeFfmpegProcess = null;
 let cleanupCallbacks = [];
 let isShuttingDown = false;
@@ -121,7 +128,7 @@ const AUDIO_ONLY_SETTINGS = {
  * @returns {Promise<string>} Path to the recorded clip
  */
 async function recordHighlight(options) {
-  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, quality, voiceChat, voiceNoHud, keepVoice } = options;
+  const { hlaePath, csgoPath, demoPath, highlight, outputPath, clipIndex, quality, voiceChat, voiceNoHud, keepVoice, gameClient } = options;
   
   // Extract map name from demo file name (e.g., "auto0-20260116-172808-1914328147-de_dust2-WIX.dem" -> "de_dust2")
   const demoFileName = path.basename(demoPath, '.dem');
@@ -133,6 +140,8 @@ async function recordHighlight(options) {
   const clipName = `${clipIndex}-${mapName}-${highlightId}`;
   const clipFolder = path.join(outputPath, 'clips', clipName);
   const clipOutputPath = path.join(outputPath, 'clips', `${clipName}.mp4`);
+  // Game console + HLAE logs of every run are kept here
+  const logDir = path.join(outputPath, 'logs');
   
   // CS:GO cfg folder (shared between passes)
   const csgoCfgFolder = path.join(csgoPath, 'csgo', 'cfg');
@@ -156,6 +165,7 @@ async function recordHighlight(options) {
       clipName, clipFolder, clipOutputPath,
       csgoCfgFolder, vdmPath, existingVdm,
       quality, keepVoice,
+      logDir, gameClient,
     });
   }
   
@@ -225,6 +235,9 @@ async function recordHighlight(options) {
       demoPath,
       cfgFileName, // Just the filename, not full path
       highlight,
+      logDir,
+      logName: clipName,
+      gameClient,
     });
     recordingArtifacts = inspectRecordingArtifacts(clipFolder, launchResult);
     console.log(`    [3/4] Recording completed: ${recordingArtifacts.tgaFiles.length} frames in ${path.basename(recordingArtifacts.takeFolder)}`);
@@ -276,6 +289,7 @@ async function recordHighlightDoublePass(options) {
     clipName, clipFolder, clipOutputPath,
     csgoCfgFolder, vdmPath, existingVdm,
     quality, keepVoice,
+    logDir, gameClient,
   } = options;
 
   const cfgFileName = `hlae_record_${clipName}.cfg`;
@@ -331,6 +345,7 @@ async function recordHighlightDoublePass(options) {
       hlaePath, csgoPath, demoPath,
       cfgFileName, highlight,
       settings: AUDIO_ONLY_SETTINGS,
+      logDir, logName: `${clipName}.pass1-voice`, gameClient,
     });
 
     const pass1RecordingArtifacts = inspectRecordingArtifacts(clipFolder, pass1LaunchResult);
@@ -380,6 +395,7 @@ async function recordHighlightDoublePass(options) {
     const pass2LaunchResult = await launchHlaeRecording({
       hlaePath, csgoPath, demoPath,
       cfgFileName, highlight,
+      logDir, logName: `${clipName}.pass2-clean`, gameClient,
     });
 
     pass2RecordingArtifacts = inspectRecordingArtifacts(clipFolder, pass2LaunchResult);
@@ -1316,7 +1332,7 @@ echo "=== VDM file will control playback and recording ==="
  * @param {Object} options.settings Optional settings override (width, height) for HLAE launch
  */
 function launchHlaeRecording(options) {
-  const { hlaePath, csgoPath, demoPath, cfgFileName, highlight, settings } = options;
+  const { hlaePath, csgoPath, demoPath, cfgFileName, highlight, settings, logDir, logName, gameClient } = options;
   const launchSettings = settings || DEFAULT_SETTINGS;
   const csgoExecutable = path.join(csgoPath, 'csgo.exe');
 
@@ -1338,10 +1354,15 @@ function launchHlaeRecording(options) {
       '-gfxHeight', String(launchSettings.height),
       '-gfxFull', 'false',
       // Use forward slashes for CS:GO console compatibility
-      '-customLaunchOptions', `-novid -console +playdemo "${demoPath.replace(/\\/g, '/')}"`,
+      // -condebug: the game writes its console to csgo/console.log (saved per run below)
+      '-customLaunchOptions', `-novid -console ${CONSOLE_LOG_LAUNCH_OPTIONS} +playdemo "${demoPath.replace(/\\/g, '/')}"`,
     ];
     
     console.log(`    Waiting for CS:GO to record and quit...`);
+
+    // Remember where the shared console.log ends, so only this run is saved
+    const consoleCapture = startGameConsoleCapture(csgoPath);
+    let fullOutput = '';
     
     const hlaeProcess = spawn(hlaePath, args, {
       stdio: 'pipe',
@@ -1356,13 +1377,36 @@ function launchHlaeRecording(options) {
     let timeout = null;
     const startedAt = Date.now();
 
-    const getResult = (details = {}) => ({
-      code: null,
-      signal: null,
-      durationMs: Date.now() - startedAt,
-      output,
-      ...details,
-    });
+    const getResult = (details = {}) => {
+      const result = {
+        code: null,
+        signal: null,
+        durationMs: Date.now() - startedAt,
+        output,
+        ...details,
+      };
+      // Save logs once, on the event that settles the run (close/error/timeout)
+      if (logDir && !settled) {
+        result.logs = saveRunLogs({
+          capture: consoleCapture,
+          logDir,
+          logName: logName || 'hlae-run',
+          details: {
+            'Game client': gameClient || 'unknown',
+            'Game folder': csgoPath,
+            Demo: demoPath,
+            Highlight: highlight?.id ?? 'unknown',
+            'HLAE command': [hlaePath, ...args].map(a => (/\s/.test(a) ? `"${a}"` : a)).join(' '),
+            'HLAE exit': result.timedOut ? 'timed out' : (result.signal ? `signal ${result.signal}` : `code ${result.code}`),
+          },
+          hlaeOutput: fullOutput,
+        });
+        if (result.logs.consoleLogPath) {
+          console.log(`    Game console log: ${result.logs.consoleLogPath}`);
+        }
+      }
+      return result;
+    };
 
     const settle = (callback) => {
       if (settled) return;
@@ -1378,10 +1422,12 @@ function launchHlaeRecording(options) {
     
     hlaeProcess.stdout.on('data', (data) => {
       output = appendOutputTail(output, data);
+      fullOutput = appendOutputTail(fullOutput, data, MAX_HLAE_LOG_LENGTH);
     });
     
     hlaeProcess.stderr.on('data', (data) => {
       output = appendOutputTail(output, data);
+      fullOutput = appendOutputTail(fullOutput, data, MAX_HLAE_LOG_LENGTH);
     });
     
     hlaeProcess.on('close', (code, signal) => {
@@ -1763,7 +1809,7 @@ function cleanupTgaFiles(folder) {
  * @returns {Promise<string[]>} Array of recorded clip paths
  */
 async function recordAllHighlights(options) {
-  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, quality, playerFilter, idFilter, voiceChat, voiceNoHud, keepVoice, force } = options;
+  const { highlightsData, demosPath, hlaePath, csgoPath, outputPath, quality, playerFilter, idFilter, voiceChat, voiceNoHud, keepVoice, force, gameClient } = options;
   
   const recordedClips = [];
   const clipsFolder = path.join(outputPath, 'clips');
@@ -1859,6 +1905,7 @@ async function recordAllHighlights(options) {
         voiceChat,
         voiceNoHud,
         keepVoice,
+        gameClient,
       });
       
       recordedClips.push(clipPath);

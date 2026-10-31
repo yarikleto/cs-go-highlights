@@ -1,13 +1,26 @@
 /**
  * @fileoverview Version compatibility utilities.
  *
- * Pure-logic module: parses steam.inf and demo headers, then asserts
- * the configured version matches what's actually installed and what the
- * demo files report. Used by `analyze-v2` and `record` commands.
+ * Pure-logic module: reads the installed game client's steam.inf and the
+ * headers of the demo files, then asserts that every demo can be played back
+ * by that client. Works for any CS:GO build, e.g.:
+ *
+ *   - CS2 (app 730) with the `csgo_legacy` beta branch selected
+ *   - Standalone CS:GO (app 4465480)
+ *
+ * The Source engine stamps every demo with the network protocol of the build
+ * that recorded it, and that number is the client's steam.inf `PatchVersion`
+ * with the dots removed (PatchVersion=1.38.8.1 -> networkProtocol=13881).
+ * A demo only plays back reliably on a client with the same protocol, so that
+ * is the primary check. Optional pins (ClientVersion / ServerVersion /
+ * networkProtocol) can still be passed to guard against Steam auto-updates.
+ *
+ * Used by `analyze-v2` (demos only) and `record` (demos + installed client).
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { GAME_CLIENTS } from '../../config.js';
 
 export class VersionMismatchError extends Error {
   constructor(reasons) {
@@ -21,15 +34,57 @@ export class VersionMismatchError extends Error {
 }
 
 /**
- * Parse <csgoPath>/csgo/steam.inf and return ClientVersion / ServerVersion as integers.
+ * Convert a steam.inf PatchVersion ("1.38.8.1") into the network protocol
+ * integer the engine writes into demo headers (13881).
+ *
+ * @param {string|null|undefined} patchVersion
+ * @returns {number|null} null when the value is missing or malformed.
+ */
+export function patchVersionToProtocol(patchVersion) {
+  if (typeof patchVersion !== 'string') return null;
+  const trimmed = patchVersion.trim();
+  if (!/^\d+(\.\d+)+$/.test(trimmed)) return null;
+  return Number.parseInt(trimmed.replace(/\./g, ''), 10);
+}
+
+/**
+ * Human-readable name of a client by Steam app ID.
+ *
+ * @param {number|null} appId
+ * @returns {string}
+ */
+export function describeGameClient(appId) {
+  if (appId === null || appId === undefined) return 'Unknown CS:GO client (no appID in steam.inf)';
+  return Object.values(GAME_CLIENTS).find(c => c.appId === appId)?.label
+    ?? `Unknown CS:GO client (appID ${appId})`;
+}
+
+/**
+ * Parse <csgoPath>/csgo/steam.inf.
  * Throws Error if the file is missing or required keys are absent.
  *
- * @param {string} csgoPath Path to CS:GO install root (the folder that contains `csgo/`).
- * @returns {{ clientVersion: number, serverVersion: number }}
+ * @param {string} csgoPath Path to CS:GO install root (the folder that contains `csgo/` and `csgo.exe`).
+ * @returns {{
+ *   clientVersion: number,
+ *   serverVersion: number,
+ *   patchVersion: string|null,
+ *   networkProtocol: number|null,
+ *   appId: number|null,
+ * }}
  */
 export function readSteamInf(csgoPath) {
   const infPath = path.join(csgoPath, 'csgo', 'steam.inf');
   if (!fs.existsSync(infPath)) {
+    // CS2 (Source 2) keeps its steam.inf under game/csgo/. Seeing that means the
+    // folder holds CS2 itself, not the legacy CS:GO build HLAE can record with.
+    const cs2InfPath = path.join(csgoPath, 'game', 'csgo', 'steam.inf');
+    if (fs.existsSync(cs2InfPath)) {
+      throw new Error(
+        `steam.inf not found at ${infPath}, but ${cs2InfPath} exists: this folder contains CS2, not CS:GO. ` +
+        'Either select the "csgo_legacy" beta for Counter-Strike 2 in Steam (Properties -> Betas), ' +
+        'or install the standalone Counter-Strike: Global Offensive app (Steam app 4465480) and point the CS:GO folder at it.'
+      );
+    }
     throw new Error(`steam.inf not found at ${infPath}`);
   }
 
@@ -61,43 +116,74 @@ export function readSteamInf(csgoPath) {
     throw new Error(`steam.inf ServerVersion is not an integer: ${values.ServerVersion}`);
   }
 
-  return { clientVersion, serverVersion };
+  // steam.inf spells the key `appID`; match case-insensitively to be safe.
+  const appIdKey = Object.keys(values).find(k => k.toLowerCase() === 'appid');
+  const appIdParsed = appIdKey ? Number.parseInt(values[appIdKey], 10) : Number.NaN;
+
+  const patchVersion = values.PatchVersion ?? null;
+
+  return {
+    clientVersion,
+    serverVersion,
+    patchVersion,
+    networkProtocol: patchVersionToProtocol(patchVersion),
+    appId: Number.isNaN(appIdParsed) ? null : appIdParsed,
+  };
 }
 
 const DEMO_HEADER_SIZE = 1072;
 const DEMO_MAGIC = 'HL2DEMO\0';
+const CS2_DEMO_MAGIC = 'PBDEMS2\0';
+const HEADER_STRING_LENGTH = 260;
+
+function readFixedString(buf, offset) {
+  const end = buf.indexOf(0, offset);
+  const limit = offset + HEADER_STRING_LENGTH;
+  return buf.toString('utf8', offset, end >= 0 && end < limit ? end : limit);
+}
 
 /**
  * Read the 1072-byte CS:GO demo header without parsing the full file.
  *
  * @param {string} filePath Absolute or relative path to a .dem file.
- * @returns {{ file: string, demoProtocol: number, networkProtocol: number, mapName: string }}
+ * @returns {{
+ *   file: string,
+ *   demoProtocol: number,
+ *   networkProtocol: number,
+ *   serverName: string,
+ *   clientName: string,
+ *   mapName: string,
+ *   gameDirectory: string,
+ * }}
  */
 export function readDemoHeader(filePath) {
   const fd = fs.openSync(filePath, 'r');
   try {
     const buf = Buffer.alloc(DEMO_HEADER_SIZE);
     const bytesRead = fs.readSync(fd, buf, 0, DEMO_HEADER_SIZE, 0);
+
+    const magic = buf.toString('binary', 0, 8);
+    if (magic === CS2_DEMO_MAGIC) {
+      throw new Error(
+        `Demo ${path.basename(filePath)} was recorded in CS2 (Source 2). ` +
+        'Only CS:GO demos are supported (CS2 csgo_legacy beta or standalone CS:GO app 4465480).'
+      );
+    }
     if (bytesRead < DEMO_HEADER_SIZE) {
       throw new Error(`Demo file ${filePath} is too short to contain a header (${bytesRead} bytes)`);
     }
-
-    const magic = buf.toString('binary', 0, 8);
     if (magic !== DEMO_MAGIC) {
       throw new Error(`File ${filePath} is not a CS:GO demo (bad magic ${JSON.stringify(magic)})`);
     }
 
-    const demoProtocol = buf.readInt32LE(8);
-    const networkProtocol = buf.readInt32LE(12);
-    // Map name is a null-padded fixed-width string at offset 536.
-    const mapEnd = buf.indexOf(0, 536);
-    const mapName = buf.toString('utf8', 536, mapEnd >= 0 && mapEnd < 796 ? mapEnd : 796);
-
     return {
       file: path.basename(filePath),
-      demoProtocol,
-      networkProtocol,
-      mapName,
+      demoProtocol: buf.readInt32LE(8),
+      networkProtocol: buf.readInt32LE(12),
+      serverName: readFixedString(buf, 16),
+      clientName: readFixedString(buf, 276),
+      mapName: readFixedString(buf, 536),
+      gameDirectory: readFixedString(buf, 796),
     };
   } finally {
     fs.closeSync(fd);
@@ -105,45 +191,82 @@ export function readDemoHeader(filePath) {
 }
 
 /**
- * Verify the installed game and the demo batch agree with the expected version.
+ * Verify the demo batch can be played back by the installed game client.
  * Collects ALL violations into one error so the user sees everything at once.
+ *
+ * Demo protocol is checked against, in order of precedence:
+ *   1. `expected.networkProtocol` (explicit pin / override), else
+ *   2. the installed client's protocol derived from steam.inf PatchVersion, else
+ *   3. (no csgoPath) demos must merely agree with each other.
  *
  * @param {Object} args
  * @param {string} [args.csgoPath] Optional CS:GO install root. When provided,
- *   steam.inf is parsed and ClientVersion / ServerVersion are checked against
- *   `expected`. analyze-v2 omits this; record provides it.
- * @param {Array<{file: string, networkProtocol: number}>} args.demoHeaders
+ *   steam.inf is parsed and every demo must match the installed client.
+ *   analyze-v2 omits this; record provides it.
+ * @param {Array<{file: string, networkProtocol: number, gameDirectory?: string}>} args.demoHeaders
  *   Headers of all demos that will be processed in this run.
- * @param {{clientVersion: number, serverVersion: number, networkProtocol: number|null}} args.expected
- *   Expected version triple from `GAME_VERSION` in src/config.js (possibly
- *   overridden by CLI flags).
+ * @param {{clientVersion: number|null, serverVersion: number|null, networkProtocol: number|null}} args.expected
+ *   Optional pins. `null` means "don't pin, follow the installed client".
+ * @returns {{ client: ReturnType<typeof readSteamInf>|null, clientName: string|null, protocol: number|null }}
+ *   What the demos were checked against (useful for logging).
  * @throws {VersionMismatchError} if any check fails.
  */
 export function assertVersionCompatibility({ csgoPath, demoHeaders, expected }) {
   const reasons = [];
+  const hasPin = (v) => v !== null && v !== undefined && !Number.isNaN(v);
 
+  let client = null;
+  let clientName = null;
   if (csgoPath) {
-    const inf = readSteamInf(csgoPath);
-    if (inf.clientVersion !== expected.clientVersion) {
+    client = readSteamInf(csgoPath);
+    clientName = describeGameClient(client.appId);
+
+    if (hasPin(expected.clientVersion) && client.clientVersion !== expected.clientVersion) {
       reasons.push(
-        `steam.inf ClientVersion=${inf.clientVersion} does not match expected ${expected.clientVersion} ` +
-        `(Steam may have auto-updated CS:GO — restore steam.inf or update config)`
+        `steam.inf ClientVersion=${client.clientVersion} does not match expected ${expected.clientVersion} ` +
+        `(Steam may have auto-updated ${clientName} — restore steam.inf or update the pinned version)`
       );
     }
-    if (inf.serverVersion !== expected.serverVersion) {
+    if (hasPin(expected.serverVersion) && client.serverVersion !== expected.serverVersion) {
       reasons.push(
-        `steam.inf ServerVersion=${inf.serverVersion} does not match expected ${expected.serverVersion} ` +
-        `(Steam may have auto-updated CS:GO — restore steam.inf or update config)`
+        `steam.inf ServerVersion=${client.serverVersion} does not match expected ${expected.serverVersion} ` +
+        `(Steam may have auto-updated ${clientName} — restore steam.inf or update the pinned version)`
       );
     }
   }
 
-  if (expected.networkProtocol !== null && expected.networkProtocol !== undefined) {
+  for (const h of demoHeaders) {
+    if (h.gameDirectory && h.gameDirectory.toLowerCase() !== 'csgo') {
+      reasons.push(`Demo "${h.file}" was recorded for game "${h.gameDirectory}", not CS:GO`);
+    }
+  }
+
+  let protocol = null;
+  if (hasPin(expected.networkProtocol)) {
+    protocol = expected.networkProtocol;
     for (const h of demoHeaders) {
-      if (h.networkProtocol !== expected.networkProtocol) {
-        reasons.push(
-          `Demo "${h.file}" has networkProtocol=${h.networkProtocol}, expected ${expected.networkProtocol}`
-        );
+      if (h.networkProtocol !== protocol) {
+        reasons.push(`Demo "${h.file}" has networkProtocol=${h.networkProtocol}, expected ${protocol}`);
+      }
+    }
+  } else if (client) {
+    protocol = client.networkProtocol;
+    if (protocol === null) {
+      reasons.push(
+        `Cannot determine the network protocol of ${clientName}: steam.inf has no valid PatchVersion ` +
+        `(got ${JSON.stringify(client.patchVersion)}). Pass --network-protocol to set it explicitly.`
+      );
+    } else {
+      for (const h of demoHeaders) {
+        if (h.networkProtocol !== protocol) {
+          reasons.push(
+            `Demo "${h.file}" has networkProtocol=${h.networkProtocol}, but the installed client ` +
+            `(${clientName}, PatchVersion ${client.patchVersion}) expected ${protocol}. ` +
+            (h.networkProtocol > protocol
+              ? 'The demo is newer than the game — update the game or use a client of that build.'
+              : 'The demo is older than the game — use a client of the build the demo was recorded on.')
+          );
+        }
       }
     }
   } else if (demoHeaders.length > 1) {
@@ -158,26 +281,26 @@ export function assertVersionCompatibility({ csgoPath, demoHeaders, expected }) 
   if (reasons.length > 0) {
     throw new VersionMismatchError(reasons);
   }
+
+  return { client, clientName, protocol };
 }
 
 /**
- * Build the expected version triple from CLI options, falling back to GAME_VERSION
+ * Build the expected version pins from CLI options, falling back to GAME_VERSION
  * defaults. Commander coerces `--client-version` / `--server-version` /
  * `--network-protocol` to numbers; missing flags arrive as `undefined`.
  *
  * @param {Object} options Commander options object.
- * @param {{clientVersion: number, serverVersion: number, networkProtocol: number|null}} defaults
+ * @param {{clientVersion: number|null, serverVersion: number|null, networkProtocol: number|null}} defaults
  *   Usually `GAME_VERSION` from `src/config.js`. Passed in (rather than imported)
- *   so this function stays a pure pure-logic helper, easy to test.
- * @returns {{clientVersion: number, serverVersion: number, networkProtocol: number|null}}
+ *   so this function stays a pure-logic helper, easy to test.
+ * @returns {{clientVersion: number|null, serverVersion: number|null, networkProtocol: number|null}}
  */
 export function resolveExpectedVersion(options, defaults) {
-  const networkProtocolRaw = options.networkProtocol;
+  const pick = (raw, fallback) => (raw === undefined || Number.isNaN(raw)) ? fallback : raw;
   return {
-    clientVersion: options.clientVersion ?? defaults.clientVersion,
-    serverVersion: options.serverVersion ?? defaults.serverVersion,
-    networkProtocol: (networkProtocolRaw === undefined || Number.isNaN(networkProtocolRaw))
-      ? defaults.networkProtocol
-      : networkProtocolRaw,
+    clientVersion: pick(options.clientVersion, defaults.clientVersion),
+    serverVersion: pick(options.serverVersion, defaults.serverVersion),
+    networkProtocol: pick(options.networkProtocol, defaults.networkProtocol),
   };
 }

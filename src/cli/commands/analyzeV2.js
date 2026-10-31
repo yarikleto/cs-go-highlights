@@ -52,16 +52,17 @@ async function analyzeV2Command(options) {
     console.warn('[V2] WARNING: --skip-version-check enabled, demo/game version not verified');
   } else {
     const expected = resolveExpectedVersion(options, GAME_VERSION);
-    const demoHeaders = demFiles.map(f => readDemoHeader(f));
     try {
+      const demoHeaders = demFiles.map(f => readDemoHeader(f));
       assertVersionCompatibility({ demoHeaders, expected });
     } catch (err) {
       if (err instanceof VersionMismatchError) {
         console.error(err.message);
-        console.error('\nUse --skip-version-check to bypass (not recommended).');
-        process.exit(1);
+      } else {
+        console.error(`Game version compatibility check failed: ${err.message}`);
       }
-      throw err;
+      console.error('\nUse --skip-version-check to bypass (not recommended).');
+      process.exit(1);
     }
   }
 

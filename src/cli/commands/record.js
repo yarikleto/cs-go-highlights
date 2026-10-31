@@ -10,7 +10,8 @@ import fs from 'fs';
 import { recordAllHighlights } from '../../recorder.js';
 import { cleanupTempFiles } from '../../merger.js';
 import { validateFileExists, validateDirExists, ensureDir, parseJsonFile, getHighlights } from '../validators.js';
-import { RECORDING_QUALITY, GAME_VERSION } from '../../config.js';
+import { RECORDING_QUALITY, GAME_VERSION, DEFAULT_GAME_CLIENT, PATHS } from '../../config.js';
+import { resolveGameClient, resolveClientInstall, verifyClientInstall } from '../services/gameClients.js';
 import {
   readDemoHeader,
   assertVersionCompatibility,
@@ -28,7 +29,7 @@ async function recordCommand(options) {
   const highlightsPath = validateFileExists(options.highlights, 'Highlights file');
   const demosPath = validateDirExists(options.demos, 'Demos folder');
   const hlaePath = validateFileExists(options.hlae, 'HLAE executable');
-  const csgoPath = validateDirExists(options.csgo, 'CS:GO folder');
+  const { client, csgoPath } = selectGameClient(options);
   const outputPath = path.resolve(options.output);
   
   const playerFilter = options.player || null;
@@ -58,27 +59,34 @@ async function recordCommand(options) {
   // Parse highlights
   const highlightsData = parseJsonFile(highlightsPath, 'highlights.json');
 
-  // Version compatibility check (fail fast before HLAE spawn).
+  // Version compatibility check (fail fast before HLAE spawn): every demo that
+  // will be recorded must match the protocol of the installed game client.
   if (options.skipVersionCheck) {
     console.warn('WARNING: --skip-version-check enabled, demo/game version not verified');
   } else {
     const expected = resolveExpectedVersion(options, GAME_VERSION);
-    const highlightsList = getHighlights(highlightsData);
+    const highlightsList = getHighlights(highlightsData)
+      .filter(h => matchesFilters(h, playerFilter, idFilter));
     const demoFilesUsed = [...new Set(highlightsList.map(h => h.demoFile))]
       .filter(Boolean)
       .map(name => path.join(demosPath, name))
       .filter(p => fs.existsSync(p));
 
-    const demoHeaders = demoFilesUsed.map(f => readDemoHeader(f));
     try {
-      assertVersionCompatibility({ csgoPath, demoHeaders, expected });
+      const demoHeaders = demoFilesUsed.map(f => readDemoHeader(f));
+      const { client: inf, protocol } = assertVersionCompatibility({ csgoPath, demoHeaders, expected });
+      console.log(
+        `Game build: PatchVersion ${inf.patchVersion ?? 'unknown'}, ClientVersion ${inf.clientVersion}`
+      );
+      console.log(`Demo compatibility: ${demoHeaders.length} demo(s) match networkProtocol ${protocol}\n`);
     } catch (err) {
       if (err instanceof VersionMismatchError) {
         console.error(err.message);
-        console.error('\nUse --skip-version-check to bypass (not recommended).');
-        process.exit(1);
+      } else {
+        console.error(`Game version compatibility check failed: ${err.message}`);
       }
-      throw err;
+      console.error('\nUse --skip-version-check to bypass (not recommended).');
+      process.exit(1);
     }
   }
 
@@ -126,6 +134,7 @@ async function recordCommand(options) {
       voiceNoHud,
       keepVoice,
       force,
+      gameClient: client.label,
     });
 
     if (recordedClips.length === 0) {
@@ -135,13 +144,59 @@ async function recordCommand(options) {
 
     // Print completion message
     printRecordCompletion(recordedClips.length, outputPath, highlightsPath);
+    console.log(`Game console and HLAE logs: ${path.join(outputPath, 'logs')}`);
 
     // Cleanup temp files
     cleanupTempFiles(outputPath);
   } catch (err) {
     console.error(`\nError during recording: ${err.message}`);
+    console.error(`Game console and HLAE logs: ${path.join(outputPath, 'logs')}`);
     process.exit(1);
   }
+}
+
+/**
+ * Resolve the game client the user chose (--client) to a verified install
+ * folder (--csgo, or located via Steam). Exits on any problem: launching the
+ * wrong game would only fail later inside HLAE with a far less clear error.
+ *
+ * @param {Object} options - Command options
+ * @returns {{ client: Object, csgoPath: string }}
+ */
+function selectGameClient(options) {
+  try {
+    const client = resolveGameClient(options.client || DEFAULT_GAME_CLIENT);
+    const { installPath, source, manifest } = resolveClientInstall({
+      client,
+      csgoPath: options.csgo,
+      steamRoot: options.steam || PATHS.steam,
+      // Pre-existing default folder of the CS2 csgo_legacy install
+      fallbackPath: client.id === 'legacy' ? PATHS.csgo : undefined,
+    });
+
+    const { problems, warnings } = verifyClientInstall({ client, installPath, manifest });
+    for (const w of warnings) console.warn(`Warning: ${w}`);
+    if (problems.length > 0) {
+      console.error(`Error: the selected game client cannot be used:\n  • ${problems.join('\n  • ')}`);
+      process.exit(1);
+    }
+
+    const how = { option: 'from --csgo', steam: 'found in Steam library', fallback: 'default folder' }[source];
+    console.log(`Game client: ${client.label} — ${installPath} (${how})`);
+    return { client, csgoPath: installPath };
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Whether a highlight passes the --player / --id filters
+ */
+function matchesFilters(highlight, playerFilter, idFilter) {
+  const matchesPlayer = !playerFilter || highlight.player?.steamId === playerFilter;
+  const matchesId = !idFilter || highlight.id === idFilter;
+  return matchesPlayer && matchesId;
 }
 
 /**
@@ -154,12 +209,8 @@ async function recordCommand(options) {
  */
 function getHighlightStats(highlightsData, playerFilter, idFilter) {
   const highlights = getHighlights(highlightsData);
-  
-  const filtered = highlights.filter(highlight => {
-    const matchesPlayer = !playerFilter || highlight.player?.steamId === playerFilter;
-    const matchesId = !idFilter || highlight.id === idFilter;
-    return matchesPlayer && matchesId;
-  });
+
+  const filtered = highlights.filter(highlight => matchesFilters(highlight, playerFilter, idFilter));
   
   // Sum playback durations
   const totalPlaybackSeconds = filtered.reduce((sum, h) => 

@@ -37,6 +37,8 @@ export const PATHS = Object.freeze({
   // External tools (Windows default paths)
   hlae: 'C:\\Program Files (x86)\\HLAE\\hlae.exe',
   csgo: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive',
+  // Steam root, used to locate game installs via steamapps/libraryfolders.vdf
+  steam: 'C:\\Program Files (x86)\\Steam',
 });
 
 /**
@@ -52,18 +54,48 @@ export const TOP_COMMAND = Object.freeze({
 // =============================================================================
 
 /**
- * Expected CS:GO game version for demo compatibility.
+ * CS:GO game clients HLAE can launch for recording. The user picks one with
+ * `record --client <id>`; its install folder is taken from `--csgo` or located
+ * through the Steam library manifests (steamapps/appmanifest_<appId>.acf).
  *
- * - clientVersion / serverVersion: integer values found in
- *   <csgoPath>/csgo/steam.inf. Must match exactly. If Steam auto-updates the
- *   game these will drift and the pipeline must abort.
- * - networkProtocol: integer found in the .dem header (header.networkProtocol).
- *   When non-null every demo must report this value. When null the check
- *   degrades to "all demos in the batch must agree with each other".
+ * - appId: Steam app ID, also written as `appID` in <install>/csgo/steam.inf.
+ * - betaKey: Steam beta branch that must be selected for this app (or null).
+ */
+export const GAME_CLIENTS = Object.freeze({
+  legacy: Object.freeze({
+    id: 'legacy',
+    appId: 730,
+    betaKey: 'csgo_legacy',
+    label: 'CS2 (app 730) with csgo_legacy beta',
+  }),
+  standalone: Object.freeze({
+    id: 'standalone',
+    appId: 4465480,
+    betaKey: null,
+    label: 'CS:GO standalone (app 4465480)',
+  }),
+});
+
+/** Client used by `record` when `--client` is not given. */
+export const DEFAULT_GAME_CLIENT = 'legacy';
+
+/**
+ * Optional version pins for demo compatibility. All `null` by default.
+ *
+ * Compatibility is detected automatically: every demo's header networkProtocol
+ * must equal the installed client's protocol, derived from steam.inf
+ * PatchVersion (1.38.8.1 -> 13881). This works for any client build.
+ *
+ * Set a value (or pass the matching CLI flag) to additionally pin it:
+ * - clientVersion / serverVersion: must equal <csgoPath>/csgo/steam.inf values
+ *   (catches Steam auto-updates of the game).
+ * - networkProtocol: every demo must report exactly this value (overrides the
+ *   protocol derived from steam.inf). Without a csgoPath and without this pin
+ *   the check degrades to "all demos in the batch must agree with each other".
  */
 export const GAME_VERSION = Object.freeze({
-  clientVersion: 2000335,
-  serverVersion: 2000335,
+  clientVersion: null,
+  serverVersion: null,
   networkProtocol: null,
 });
 
