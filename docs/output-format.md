@@ -105,7 +105,7 @@ Each highlight includes a `playback` object with recommended tick ranges for vid
     minGapDuration: 4      // Minimum gap duration to trigger speedup
   },
   music: {
-    folder: './music',
+    folder: './temp/music',
     volume: 0.7,
     gameVolume: 1.0,
     fadeDuration: 2,

@@ -31,7 +31,7 @@
           ]
         },
         "required": false,
-        "description": "Where to save the final compressed video (defaults to ./output/highlights_final_compressed.mp4)"
+        "description": "Where to save the final compressed video (defaults to ./temp/output/highlights_final_compressed.mp4)"
       },
       {
         "name": "client",
@@ -56,8 +56,8 @@
         "name": "Clean directories",
         "type": "clean-dirs",
         "dirs": [
-          "./demos",
-          "./output"
+          "./temp/demos",
+          "./temp/output"
         ]
       },
       {
@@ -65,33 +65,33 @@
         "command": "extract",
         "options": {
           "archive": "$archive",
-          "output": "./demos"
+          "output": "./temp/demos"
         }
       },
       {
         "name": "Analyze (Legacy)",
         "command": "analyze",
         "options": {
-          "demos": "./demos",
-          "output": "./output"
+          "demos": "./temp/demos",
+          "output": "./temp/output"
         }
       },
       {
         "name": "Top Highlights",
         "command": "top",
         "options": {
-          "highlights": "./output/highlights.json",
+          "highlights": "./temp/output/highlights.json",
           "count": 10,
           "asc": true,
           "unique-players": 1,
-          "output": "./output/highlights_top.json"
+          "output": "./temp/output/highlights_top.json"
         }
       },
       {
         "name": "Record",
         "command": "record",
         "options": {
-          "highlights": "./output/highlights_top.json",
+          "highlights": "./temp/output/highlights_top.json",
           "voice-chat": true,
           "client": "$client"
         }
@@ -100,7 +100,7 @@
         "name": "Postprocess UI",
         "command": "postprocess-ui",
         "options": {
-          "highlights": "./output/highlights_top.json",
+          "highlights": "./temp/output/highlights_top.json",
           "speedup": 2,
           "overlay": true
         }
@@ -109,14 +109,14 @@
         "name": "Merge",
         "command": "merge",
         "options": {
-          "clips": "./output/clips_processed"
+          "clips": "./temp/output/clips_processed"
         }
       },
       {
         "name": "Compress",
         "command": "compress",
         "options": {
-          "input": "./output/highlights_final.mp4",
+          "input": "./temp/output/highlights_final.mp4",
           "output": "$outputPath"
         }
       }
@@ -170,7 +170,7 @@
           ]
         },
         "required": false,
-        "description": "Where to save the final video (defaults to ./output/highlights_final.mp4)"
+        "description": "Where to save the final video (defaults to ./temp/output/highlights_final.mp4)"
       },
       {
         "name": "client",
@@ -195,8 +195,8 @@
         "name": "Clean directories",
         "type": "clean-dirs",
         "dirs": [
-          "./demos",
-          "./output"
+          "./temp/demos",
+          "./temp/output"
         ]
       },
       {
@@ -204,34 +204,34 @@
         "command": "extract",
         "options": {
           "archive": "$archive",
-          "output": "./demos"
+          "output": "./temp/demos"
         }
       },
       {
         "name": "Analyze (Legacy)",
         "command": "analyze",
         "options": {
-          "demos": "./demos",
-          "output": "./output"
+          "demos": "./temp/demos",
+          "output": "./temp/output"
         }
       },
       {
         "name": "Top Highlights (Player, Low → High)",
         "command": "top",
         "options": {
-          "highlights": "./output/highlights.json",
+          "highlights": "./temp/output/highlights.json",
           "count": "$topCount",
           "asc": true,
           "player-name": "$playerName",
           "unique-players": 100,
-          "output": "./output/highlights_top.json"
+          "output": "./temp/output/highlights_top.json"
         }
       },
       {
         "name": "Record",
         "command": "record",
         "options": {
-          "highlights": "./output/highlights_top.json",
+          "highlights": "./temp/output/highlights_top.json",
           "voice-chat": true,
           "client": "$client"
         }
@@ -240,7 +240,7 @@
         "name": "Postprocess UI",
         "command": "postprocess-ui",
         "options": {
-          "highlights": "./output/highlights_top.json",
+          "highlights": "./temp/output/highlights_top.json",
           "speedup": 2,
           "overlay": true
         }
@@ -249,7 +249,7 @@
         "name": "Merge",
         "command": "merge",
         "options": {
-          "clips": "./output/clips_processed",
+          "clips": "./temp/output/clips_processed",
           "output": "$outputPath"
         }
       }

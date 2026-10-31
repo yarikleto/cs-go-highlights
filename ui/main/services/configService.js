@@ -6,8 +6,8 @@ const CONFIG_PATH = path.join(PROJECT_ROOT, 'electron-config.json');
 
 const DEFAULT_CONFIG = {
   paths: {
-    demos: './demos',
-    output: './output',
+    demos: './temp/demos',
+    output: './temp/output',
     hlae: 'C:\\Program Files (x86)\\HLAE\\hlae.exe',
     csgo: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive',
   },

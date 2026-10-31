@@ -8,7 +8,6 @@
 
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
 import { createGunzip } from 'zlib';
 import { pipeline } from 'stream/promises';
 import yauzl from 'yauzl';
@@ -67,7 +66,7 @@ async function extractCommand(options) {
 
   fs.mkdirSync(outputPath, { recursive: true });
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csgo-extract-'));
+  const tempDir = createStagingDir(outputPath);
 
   try {
     const demoFiles = [];
@@ -97,6 +96,10 @@ async function extractCommand(options) {
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+function createStagingDir(outputPath) {
+  return fs.mkdtempSync(path.join(path.dirname(outputPath), '.extract-staging-'));
 }
 
 /**

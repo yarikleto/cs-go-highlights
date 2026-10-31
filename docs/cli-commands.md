@@ -15,7 +15,7 @@ node src/index.js analyze --demos <path> [--output <path>] [--reset-music]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--demos <path>` | Yes | - | Path to folder containing `.dem` files |
-| `--output <path>` | No | `./output` | Output folder for `highlights.json` |
+| `--output <path>` | No | `./temp/output` | Output folder for `highlights.json` |
 | `--reset-music` | No | - | Reset music mapping (discard existing offsets) |
 | `--solo-kills-file <path>` | No | - | Path to JSON file with solo kills mapping |
 
@@ -30,7 +30,7 @@ By default, `analyze` preserves existing `offset` values in `music-mapping.json`
 #   "other.dem": [12345]
 # }
 
-node src/index.js analyze --demos ./demos --solo-kills-file ./solo-kills.json
+node src/index.js analyze --demos ./temp/demos --solo-kills-file ./temp/solo-kills.json
 ```
 
 ### `analyze-v2`
@@ -56,8 +56,8 @@ Each kill in v2 includes additional metadata:
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--demos <path>` | Yes | `./demos` | Path to folder containing `.dem` files |
-| `--output <path>` | No | `./output` | Output folder for `highlights.json` |
+| `--demos <path>` | Yes | `./temp/demos` | Path to folder containing `.dem` files |
+| `--output <path>` | No | `./temp/output` | Output folder for `highlights.json` |
 | `--solo-kills-file <path>` | No | - | Path to JSON file with solo kills mapping |
 
 ### `analyze-postprocess-ui`
@@ -70,20 +70,20 @@ node src/index.js analyze-postprocess-ui --highlights <path> [--output <path>]
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--highlights <path>` | No | `./output/highlights.json` | Path to highlights file |
-| `--output <path>` | No | `./output/highlights_postprocess.json` | Output file path |
+| `--highlights <path>` | No | `./temp/output/highlights.json` | Path to highlights file |
+| `--output <path>` | No | `./temp/output/highlights_postprocess.json` | Output file path |
 
 V2 pipeline example:
 
 ```bash
 # Step 1: Parse demos (raw data)
-node src/index.js analyze-v2 --demos ./demos
+node src/index.js analyze-v2 --demos ./temp/demos
 
 # Step 2: Calculate playback/speedup/slowmo
-node src/index.js analyze-postprocess-ui --highlights ./output/highlights.json
+node src/index.js analyze-postprocess-ui --highlights ./temp/output/highlights.json
 
 # Step 3: Record (use highlights_postprocess.json)
-node src/index.js record --highlights ./output/highlights_postprocess.json
+node src/index.js record --highlights ./temp/output/highlights_postprocess.json
 ```
 
 ### `record`
@@ -96,13 +96,13 @@ node src/index.js record [options]
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--highlights <path>` | No | `./output/highlights.json` | Path to `highlights.json` file |
-| `--demos <path>` | No | `./demos` | Path to folder containing `.dem` files |
+| `--highlights <path>` | No | `./temp/output/highlights.json` | Path to `highlights.json` file |
+| `--demos <path>` | No | `./temp/demos` | Path to folder containing `.dem` files |
 | `--hlae <path>` | No | `C:\Program Files (x86)\HLAE\hlae.exe` | Path to HLAE executable |
 | `--client <id>` | No | `legacy` | Game client HLAE launches: `legacy` = CS2 (app 730) with the `csgo_legacy` beta, `standalone` = CS:GO (app 4465480) |
 | `--csgo <path>` | No | found via Steam | Install folder of the selected client (contains `csgo.exe`). When empty, it is found from `steamapps/appmanifest_<appId>.acf` in your Steam libraries |
 | `--steam <path>` | No | `C:\Program Files (x86)\Steam` | Steam folder used to find the selected client |
-| `--output <path>` | No | `./output` | Output folder for clips |
+| `--output <path>` | No | `./temp/output` | Output folder for clips |
 | `--quality <preset>` | No | `medium` | Encoding quality preset |
 | `--player <steamId>` | No | - | Filter highlights by player Steam ID |
 | `--id <highlightId>` | No | - | Record only a specific highlight by ID |
@@ -154,8 +154,8 @@ node src/index.js postprocess-ui --highlights <path> [options]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--highlights <path>` | Yes | - | Path to `highlights.json` file |
-| `--clips <path>` | No | `./output/clips` | Path to folder containing raw clips |
-| `--output <path>` | No | `./output/clips_processed` | Output folder for processed clips |
+| `--clips <path>` | No | `./temp/output/clips` | Path to folder containing raw clips |
+| `--output <path>` | No | `./temp/output/clips_processed` | Output folder for processed clips |
 | `--speedup <multiplier>` | No | `3` | Speed up gaps between kills |
 | `--overlay` | No | `true` | Show player name and highlight type overlay |
 | `--slowmo <factor>` | No | `0.6` | Slow motion on last headshot/noscope kill |
@@ -175,9 +175,9 @@ node src/index.js postprocess-sound --highlights <path> [--clips <path>] [option
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--highlights <path>` | Yes | - | Path to `highlights.json` file |
-| `--clips <path>` | No | `./output/clips_processed` | Path to processed clips folder |
-| `--output <path>` | No | `./output/clips_final` | Output folder for clips with music |
-| `--music <folder>` | No | `./music` | Path to folder with music files |
+| `--clips <path>` | No | `./temp/output/clips_processed` | Path to processed clips folder |
+| `--output <path>` | No | `./temp/output/clips_final` | Output folder for clips with music |
+| `--music <folder>` | No | `./temp/music` | Path to folder with music files |
 | `--music-volume <percent>` | No | `70` | Music volume 0-100% |
 | `--force` | No | - | Re-apply music even if already applied |
 | `--id <highlightId>` | No | - | Apply music only to a specific highlight |
@@ -193,7 +193,7 @@ node src/index.js merge --clips <path> [--output <path>] [--cleanup]
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--clips <path>` | Yes | - | Path to folder containing `.mp4` clip files |
-| `--output <path>` | No | `./output/highlights_final.mp4` | Output path for final video |
+| `--output <path>` | No | `./temp/output/highlights_final.mp4` | Output path for final video |
 | `--cleanup` | No | - | Delete individual clips after merging |
 | `--transition <duration>` | No | - | Add fade in/out transitions (duration in seconds) |
 
@@ -243,7 +243,7 @@ node src/index.js timestamps --highlights <path> [--output <path>] [--speedup <m
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--highlights <path>` | Yes | - | Path to `highlights.json` file |
-| `--output <path>` | No | `./output/timestamps.txt` | Output file path |
+| `--output <path>` | No | `./temp/output/timestamps.txt` | Output file path |
 | `--speedup <multiplier>` | No | `3` | Speedup multiplier used in postprocess |
 | `--slowmo <factor>` | No | `0.6` | Slowmo factor used in postprocess |
 
@@ -264,9 +264,9 @@ node src/index.js top [--highlights <path>] [--count <n>] [--output <path>] [opt
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--highlights <path>` | No | `./output/highlights.json` | Path to `highlights.json` file |
+| `--highlights <path>` | No | `./temp/output/highlights.json` | Path to `highlights.json` file |
 | `--count <n>` | No | `10` | Number of top highlights to select |
-| `--output <path>` | No | `./output/highlights_top.json` | Output file path |
+| `--output <path>` | No | `./temp/output/highlights_top.json` | Output file path |
 | `--asc` | No | - | Sort ascending (lowest score first) |
 | `--show-scores` | No | - | Print detailed score breakdown |
 | `--player <steamId>` | No | - | Filter by player Steam ID |
@@ -286,4 +286,4 @@ node src/index.js resync-music [--mapping <path>]
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--mapping <path>` | No | `./output/music-mapping.json` | Path to music-mapping.json file |
+| `--mapping <path>` | No | `./temp/output/music-mapping.json` | Path to music-mapping.json file |

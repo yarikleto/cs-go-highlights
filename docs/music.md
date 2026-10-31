@@ -4,7 +4,7 @@ Add background music to your highlight clips.
 
 ## Setup
 
-1. Create a `music/` folder in your project directory
+1. Create a `temp/music/` folder in your project directory
 2. Add audio files (MP3, WAV, FLAC, OGG, M4A, AAC)
 
 ## How It Works
@@ -24,11 +24,11 @@ Add background music to your highlight clips.
 ```json
 {
   "tracks": [
-    { "path": "music/track.mp3", "duration": 300.5 }
+    { "path": "temp/music/track.mp3", "duration": 300.5 }
   ],
   "clips": {
     "ced8b2df3663": {
-      "track": "music/track.mp3",
+      "track": "temp/music/track.mp3",
       "startTime": "0:00",
       "endTime": "0:45",
       "duration": "0:45",

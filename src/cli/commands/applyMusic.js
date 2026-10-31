@@ -5,7 +5,7 @@
  * and applies the corresponding music segments to each clip.
  * 
  * Usage:
- * node src/cli/index.js apply-music --mapping ./output/music-timeline.json
+ * node src/cli/index.js apply-music --mapping ./temp/output/music-timeline.json
  */
 
 import fs from 'fs';

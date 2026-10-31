@@ -1,15 +1,11 @@
 node_modules/
-output/
+temp/
 ui/dist/
 ui/release/
 *.log
 .DS_Store
 .cursor/
-demos/
-unused_demos/
-.npm-cache/
 PRIVATE_README.md
-/music
 docs/superpowers/
 
 # AI coding assistants (Claude Code, Codex, etc.)

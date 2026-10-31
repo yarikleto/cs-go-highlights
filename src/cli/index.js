@@ -25,11 +25,11 @@
  * 
  * @example
  * # Full pipeline
- * node src/index.js analyze --demos ./demos
- * node src/index.js record --highlights ./output/highlights.json --demos ./demos --hlae ./hlae.exe --csgo "C:/Steam/cs2"
- * node src/index.js postprocess-ui --highlights ./output/highlights.json
- * node src/index.js postprocess-sound --highlights ./output/highlights.json
- * node src/index.js merge --clips ./output/clips_final
+ * node src/index.js analyze --demos ./temp/demos
+ * node src/index.js record --highlights ./temp/output/highlights.json --demos ./temp/demos --hlae ./hlae.exe --csgo "C:/Steam/cs2"
+ * node src/index.js postprocess-ui --highlights ./temp/output/highlights.json
+ * node src/index.js postprocess-sound --highlights ./temp/output/highlights.json
+ * node src/index.js merge --clips ./temp/output/clips_final
  */
 
 import { program } from 'commander';

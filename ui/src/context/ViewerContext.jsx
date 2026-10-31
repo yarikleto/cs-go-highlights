@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 const ViewerContext = createContext(null);
 
 export function ViewerProvider({ children }) {
-  const [filePath, setFilePath] = useState('./output/highlights.json');
+  const [filePath, setFilePath] = useState('./temp/output/highlights.json');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 

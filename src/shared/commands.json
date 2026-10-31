@@ -25,7 +25,7 @@
         "name": "output",
         "label": "Output Folder",
         "type": "folder",
-        "default": "./demos",
+        "default": "./temp/demos",
         "description": "Folder where .dem files will be placed (flat structure)"
       }
     ]
@@ -41,14 +41,14 @@
         "label": "Demos Folder",
         "type": "folder",
         "required": true,
-        "default": "./demos",
+        "default": "./temp/demos",
         "description": "Path to folder containing .dem files"
       },
       {
         "name": "output",
         "label": "Output Folder",
         "type": "folder",
-        "default": "./output",
+        "default": "./temp/output",
         "description": "Output folder for highlights.json"
       },
       {
@@ -101,14 +101,14 @@
             "json"
           ]
         },
-        "default": "./output/highlights.json",
+        "default": "./temp/output/highlights.json",
         "description": "Path to highlights.json from analyze-v2"
       },
       {
         "name": "output",
         "label": "Output File",
         "type": "text",
-        "default": "./output/highlights_postprocess.json",
+        "default": "./temp/output/highlights_postprocess.json",
         "description": "Output file path"
       }
     ]
@@ -124,13 +124,13 @@
         "label": "Demos Folder",
         "type": "folder",
         "required": true,
-        "default": "./demos"
+        "default": "./temp/demos"
       },
       {
         "name": "output",
         "label": "Output Folder",
         "type": "folder",
-        "default": "./output"
+        "default": "./temp/output"
       },
       {
         "name": "reset-music",
@@ -168,13 +168,13 @@
             "json"
           ]
         },
-        "default": "./output/highlights.json"
+        "default": "./temp/output/highlights.json"
       },
       {
         "name": "demos",
         "label": "Demos Folder",
         "type": "folder",
-        "default": "./demos"
+        "default": "./temp/demos"
       },
       {
         "name": "hlae",
@@ -222,7 +222,7 @@
         "name": "output",
         "label": "Output Folder",
         "type": "folder",
-        "default": "./output"
+        "default": "./temp/output"
       },
       {
         "name": "quality",
@@ -337,19 +337,19 @@
             "json"
           ]
         },
-        "default": "./output/highlights.json"
+        "default": "./temp/output/highlights.json"
       },
       {
         "name": "clips",
         "label": "Clips Folder",
         "type": "folder",
-        "default": "./output/clips"
+        "default": "./temp/output/clips"
       },
       {
         "name": "output",
         "label": "Output Folder",
         "type": "folder",
-        "default": "./output/clips_processed"
+        "default": "./temp/output/clips_processed"
       },
       {
         "name": "speedup",
@@ -404,25 +404,25 @@
             "json"
           ]
         },
-        "default": "./output/highlights.json"
+        "default": "./temp/output/highlights.json"
       },
       {
         "name": "clips",
         "label": "Processed Clips Folder",
         "type": "folder",
-        "default": "./output/clips_processed"
+        "default": "./temp/output/clips_processed"
       },
       {
         "name": "output",
         "label": "Output Folder",
         "type": "folder",
-        "default": "./output/clips_final"
+        "default": "./temp/output/clips_final"
       },
       {
         "name": "music",
         "label": "Music Folder",
         "type": "folder",
-        "default": "./music"
+        "default": "./temp/music"
       },
       {
         "name": "music-volume",
@@ -462,7 +462,7 @@
         "name": "output",
         "label": "Output File",
         "type": "text",
-        "default": "./output/highlights_final.mp4"
+        "default": "./temp/output/highlights_final.mp4"
       },
       {
         "name": "transition",
@@ -497,7 +497,7 @@
             "json"
           ]
         },
-        "default": "./output/highlights.json"
+        "default": "./temp/output/highlights.json"
       },
       {
         "name": "count",
@@ -511,7 +511,7 @@
         "name": "output",
         "label": "Output File",
         "type": "text",
-        "default": "./output/highlights_top.json"
+        "default": "./temp/output/highlights_top.json"
       },
       {
         "name": "show-scores",
@@ -690,13 +690,13 @@
             "json"
           ]
         },
-        "default": "./output/highlights.json"
+        "default": "./temp/output/highlights.json"
       },
       {
         "name": "output",
         "label": "Output File",
         "type": "text",
-        "default": "./output/timestamps.txt"
+        "default": "./temp/output/timestamps.txt"
       },
       {
         "name": "speedup",
@@ -728,7 +728,7 @@
             "json"
           ]
         },
-        "default": "./output/music-mapping.json"
+        "default": "./temp/output/music-mapping.json"
       }
     ]
   },
@@ -742,7 +742,7 @@
         "name": "music",
         "label": "Music Folder",
         "type": "folder",
-        "default": "./music"
+        "default": "./temp/music"
       },
       {
         "name": "output",
@@ -769,7 +769,7 @@
           ]
         },
         "required": true,
-        "default": "./output/music-timeline.json",
+        "default": "./temp/output/music-timeline.json",
         "description": "Path to music-timeline.json from Music Editor"
       },
       {
@@ -782,7 +782,7 @@
         "name": "output",
         "label": "Output Folder",
         "type": "folder",
-        "default": "./output/clips_with_music",
+        "default": "./temp/output/clips_with_music",
         "description": "Output folder for clips with music"
       },
       {

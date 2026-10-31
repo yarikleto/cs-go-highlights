@@ -34,7 +34,7 @@
 | **[Node.js](https://nodejs.org/)** (v22.12+) | Runtime — Node 22.x only |
 | **[FFmpeg](https://ffmpeg.org/)** | Video encoding — must be in PATH |
 | **[HLAE](https://www.advancedfx.org/)** | Half-Life Advanced Effects — video capture |
-| **CS:GO** | HLAE does not support CS2. Either install [standalone CS:GO](https://store.steampowered.com/app/4465480/CounterStrikeGlobal_Offensive/) (Steam app 4465480), or CS2 → Properties → Betas → `csgo_legacy`. Pick which one records in **Record → Game Client**. Demos are checked against that client's build, and its console log is saved to `output/logs/` |
+| **CS:GO** | HLAE does not support CS2. Either install [standalone CS:GO](https://store.steampowered.com/app/4465480/CounterStrikeGlobal_Offensive/) (Steam app 4465480), or CS2 → Properties → Betas → `csgo_legacy`. Pick which one records in **Record → Game Client**. Demos are checked against that client's build, and its console log is saved to `temp/output/logs/` |
 
 ## Installation
 

@@ -20,20 +20,23 @@
 // DEFAULT PATHS
 // =============================================================================
 
-/**
- * Default file and folder paths for CLI commands
- */
+export const TEMP_DIR = './temp';
+
+const OUTPUT_DIR = `${TEMP_DIR}/output`;
+
 export const PATHS = Object.freeze({
-  output: './output',
-  demos: './demos',
-  highlights: './output/highlights.json',
-  highlightsTop: './output/highlights_top.json',
-  clips: './output/clips',
-  clipsProcessed: './output/clips_processed',
-  clipsFinal: './output/clips_final',
-  highlightsFinal: './output/highlights_final.mp4',
-  timestamps: './output/timestamps.txt',
-  musicMapping: './output/music-mapping.json',
+  temp: TEMP_DIR,
+  output: OUTPUT_DIR,
+  demos: `${TEMP_DIR}/demos`,
+  music: `${TEMP_DIR}/music`,
+  highlights: `${OUTPUT_DIR}/highlights.json`,
+  highlightsTop: `${OUTPUT_DIR}/highlights_top.json`,
+  clips: `${OUTPUT_DIR}/clips`,
+  clipsProcessed: `${OUTPUT_DIR}/clips_processed`,
+  clipsFinal: `${OUTPUT_DIR}/clips_final`,
+  highlightsFinal: `${OUTPUT_DIR}/highlights_final.mp4`,
+  timestamps: `${OUTPUT_DIR}/timestamps.txt`,
+  musicMapping: `${OUTPUT_DIR}/music-mapping.json`,
   // External tools (Windows default paths)
   hlae: 'C:\\Program Files (x86)\\HLAE\\hlae.exe',
   csgo: 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive',
@@ -310,7 +313,7 @@ export const VISUAL_EFFECTS = Object.freeze({
  * Background music overlay settings
  */
 export const MUSIC = Object.freeze({
-  defaultFolder: './music',
+  defaultFolder: PATHS.music,
   defaultVolume: 0.6,       // Music volume (0-1)
   gameVolume: 1.0,          // Game audio volume (0-1)
   fadeDuration: 2,          // Fade in/out duration
